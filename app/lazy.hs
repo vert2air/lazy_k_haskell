@@ -110,8 +110,8 @@ deconsLoop startTime countdown hist expr = do
                     (L _ (V 1), L _ (V 1)) -> return ()
                     _ -> deconsLoop startTime (countdown - 1) hist'' cdr
 
-prime :: IO ()
-prime = do
+lazy :: IO ()
+lazy = do
     srcFile <- getArgs >>= return . (!! 0)
     lazySrc <- readFile srcFile
     startTime <- getCPUTime
@@ -122,4 +122,4 @@ prime = do
             putStrLn $ "Error: " ++ show err
 
 main :: IO ()
-main = prime
+main = lazy
