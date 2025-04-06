@@ -5,11 +5,9 @@ module LazyKCore where
 import Debug.Trace (trace)
 import           Data.Default (Default(..))
 import           Data.Char (isAlpha, isDigit, isSpace, toUpper, toLower)
-import qualified Data.IntMap as I (IntMap, elems, empty, filterWithKey, insert,
-                                   lookup, mapKeys)
 import           Data.List (elemIndex)
-import qualified Data.Map as M (Map, empty, insert, lookup, map, size)
-import qualified Data.Set as S (Set, empty, filter, fromList, insert, map,
+import qualified Data.Map as M (Map, empty, insert, lookup)
+import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces)
@@ -104,11 +102,11 @@ enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
     (names, idxes) = getFreeVars expr 0
     allname = foldl foldStep names . S.toList $ idxes
       where foldStep set ix = S.insert [nmStack mng !! (ix - 1)] set
-    newName = head . filter (\nm -> S.notMember [nm] allname) $ nmPool mng
+    newName = (!!0) . filter (\nm -> S.notMember [nm] allname) $ nmPool mng
 
 leaveLambda :: NameManager -> NameManager
 leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
-leaveLambda mng@NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
+leaveLambda     NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
 
 {- | 自由変数の一覧取得 (入力プロミスを含む)
  -}
@@ -124,12 +122,12 @@ getFreeVars (App _ fun oprd) dep
   where
     (f_name, f_idx) = getFreeVars fun (dep)
     (o_name, o_idx) = getFreeVars oprd (dep)
-getFreeVars (Nm name) dep
+getFreeVars (Nm name) _
     | (name !! 0) `elem` "iksIKS" = (S.empty, S.empty)
     | otherwise                   = (S.singleton [name !! 0], S.empty)
 -- 入力プロミスは、自由変数として取得できるようにしておく。
-getFreeVars (In ix) dep = (S.singleton $ "In(" ++ show ix ++ ")", S.empty)
-getFreeVars _ dep = (S.empty, S.empty)
+getFreeVars (In ix) _ = (S.singleton $ "In(" ++ show ix ++ ")", S.empty)
+getFreeVars _       _ = (S.empty, S.empty)
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
 
@@ -142,8 +140,8 @@ toNamedString mng (V v) = Stringifying name SK_General mng
     name = case v <= length (nmStack mng) of
             True
                 | (nmStack mng !! (v - 1)) /= ' ' -> [nmStack mng !! (v - 1)]
-            otherwise                       -> '_' : show v
-toNamedString mng e@(L _ v) = Stringifying ('\\':str_ret) style_ret mng_ret
+            _                                     -> '_' : show v
+toNamedString mng e@(L _ _) = Stringifying ('\\':str_ret) style_ret mng_ret
   where
     Stringifying str_ret style_ret mng_ret = digLamAbst mng e
 toNamedString mng (App _ (Nm "I") (Nm "iota"))
@@ -161,14 +159,14 @@ toNamedString mng (App _ fun oprd) =
         (Nm "iota", _,     _, _           ) -> ("*", SK_General)
         (_,  SK_IotaUnlam, Nm "iota", _) -> ("*", SK_IotaUnlam)
         (_,  _,            Nm "iota", _) -> ("*", SK_General)
-        otherwise -> (if nmUnlamStyle mng then "`" else "", SK_General)
+        _ -> (if nmUnlamStyle mng then "`" else "", SK_General)
     par_fun = case fun of
         L _ _ -> "(" ++ str_fun ++ ")"
-        otherwise -> str_fun
+        _     -> str_fun
     par_oprd = case (oprd, style_oprd) of
-        (L _ _, _) -> "(" ++ str_oprd ++ ")"
+        (L _ _, _)              -> "(" ++ str_oprd ++ ")"
         (App _ _ _, SK_General) -> "(" ++ str_oprd ++ ")"
-        otherwise -> str_oprd
+        _                       -> str_oprd
     pad = if isDigit (par_fun !! (length par_fun - 1))
             && isDigit (par_oprd !! 0)
           then " " else ""
@@ -188,6 +186,7 @@ digLamAbst mng e@(L _ lexp@(L _ _)) = case (newName, ret) of
     (' ':_, _    ) -> Stringifying (' ':'\\':ret) SK_General mng_ret
     (n:_  , ' ':_) -> Stringifying (n:'.':' ':'\\':ret) SK_General mng_ret
     (n:_  , _    ) -> Stringifying (n:ret) SK_General mng_ret
+    ("", _    ) -> error $ "Internal Error : enterLambda cannot assign name"
   where
     (newName, mng_ent) = enterLambda mng e
     Stringifying ret _ mng_new = digLamAbst mng_ent lexp
@@ -195,6 +194,7 @@ digLamAbst mng e@(L _ lexp@(L _ _)) = case (newName, ret) of
 digLamAbst mng e@(L _ lexp) = case newName of
     ' ':_ -> Stringifying (' ':ret) SK_General mng_ret
     n:_   -> Stringifying (n:'.':ret) SK_General mng_ret
+    ""    -> error $ "Internal Error : enterLambda cannot assign name"
   where
     (newName, mng_ent) = enterLambda mng e
     Stringifying ret _ mng_new = toNamedString mng_ent lexp
@@ -215,16 +215,16 @@ bindIdx names expr = applyN (length names) la $ bindAux bindTab 0 expr
     bindTab = foldl insertAux M.empty $ zip names [0..]
 
 applyN :: Int -> (a -> a) -> a -> a
-applyN 0 f x = x
+applyN 0 _ x = x
 applyN n f x = applyN (n - 1) f (f x)
 
 bindAux :: M.Map String Int -> Int -> LamExpr -> LamExpr
 bindAux tab dep (Nm nm) = case M.lookup nm tab of
-    Just n  -> V (n + dep)
-    Nothing -> Nm nm
-bindAux tab dep (L _ lexpr) = la $ bindAux tab (dep + 1) lexpr
+                                    Just n  -> V (n + dep)
+                                    Nothing -> Nm nm
+bindAux tab dep (L _ lexpr)      = la $ bindAux tab (dep + 1) lexpr
 bindAux tab dep (App _ fun oprd) = bindAux tab dep fun %: bindAux tab dep oprd
-bindAux tab dep expr = expr
+bindAux _   _   expr             = expr
 
 exprs, unlamExpr, iotaExpr, expr' :: Parsec String u LamExpr
 absts, abst, abst' :: Parsec String u [String]
@@ -278,7 +278,7 @@ toLambda (Nm "I")    = ccI
 toLambda (Nm "K")    = ccK
 toLambda (Nm "S")    = ccS
 toLambda (Nm "iota") = iota
-toLambda e@(Nm nm)   = e  -- 変換できないので、そのまま。
+toLambda e@(Nm _)    = e  -- 変換できないので、そのまま。
 toLambda (Jot _ j)   = foldl jotToLam ccI j
 toLambda (L _ le)    = la $ toLambda le
 toLambda (App _ m n) = toLambda m %: toLambda n
@@ -347,7 +347,7 @@ betaRed hist                (App _ (L _ le) e) = case once of
     -- 先頭から見直しても結局ここに戻ってくる。
     -- それは無駄なので、ここから betaRed を継続する。
     App _ _ _ -> betaRed hist once >>= RedProg (-1)
-    otherwise -> RedProg (-1) once
+    _         -> RedProg (-1) once
   where
     once = comple (subst 1 e) le
 betaRed hist@(eof, input) e@(App s (In ix) oprd)

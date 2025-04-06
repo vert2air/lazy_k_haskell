@@ -3,38 +3,19 @@ import Data.Char (ord)
 import System.CPUTime (getCPUTime)
 import System.IO (isEOF)
 import System.Environment (getArgs)
-import LazyKCore (
-    (%:), getNum, la,
-    betaRed, RedResult(..),
-    -- betaReds,
-    -- betaRedPar,
-    ccI, LamExpr(..), readLazyK, toLambda)
-
--- input = "( \\ x . x ) ( \\ x . x )"
-input = "( \\ x . \\ y . (x (y x)) ((y x) x)) ( \\ x . x )"
--- input = "( \\ x . \\ y . (( x y ) ( x y )) (x y) ) ( \\ x . \\ y . y x )"
--- input = "( \\ x . \\ y . x y ( x y ) ) ( \\ x . \\ y . y x )"
-
-{-
-simple_test :: String -> IO ()
-simple_test input =
-    -- case betaRedPar . readLamExpr $ input of
-    case betaRed . readLazyK $ input of
-        Just expr' -> putStrLn . show $ expr'
-        Nothing -> putStrLn "Nothing"
--}
-
+import LazyKCore ((%:), betaRed, RedResult(..),
+    LamExpr(..), readLazyK, toLambda)
 
 decons :: (Bool, [Int])
         -> LamExpr
         -> IO (LamExpr, LamExpr, (Bool, [Int]))
-decons hist@(eof, input) expr =
+decons hist expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, hist)
     _ -> do
         reded <- betaRedInput hist expr
         case reded of
-            (RedProg ix expr', hist') -> decons hist' expr'
+            (RedProg _ expr', hist') -> decons hist' expr'
             ret@(RedStop ix expr', hist') -> do
                 if ix < 0 then error $ show ret
                           else decons hist' expr'
@@ -42,12 +23,12 @@ decons hist@(eof, input) expr =
 betaRedInput :: (Bool, [Int])
             -> LamExpr
             -> IO (RedResult LamExpr, (Bool, [Int]))
-betaRedInput hist@(_, input) expr = do
+betaRedInput hist expr = do
     let ret = betaRed hist expr
     -- putStr "." -- ToDo 頻度調整
     -- case betaRedPar expr of
     case ret of
-        ret@(RedProg ix expr')
+        RedProg ix expr'
             | ix < 0 -> do
                 -- putStrLn "---------------> RedProg minus"
                 return (ret, hist)
@@ -55,7 +36,7 @@ betaRedInput hist@(_, input) expr = do
                 -- putStrLn "---------------> RedProg Plus"
                 hist' <- pollInput ix hist
                 betaRedInput hist' expr'
-        ret@(RedStop ix expr')
+        RedStop ix _
             | ix < 0 -> do
                 -- putStrLn "---------------> RedStop minus"
                 return (RedStop ix expr, hist) -- 元のexprを使用。
@@ -66,11 +47,11 @@ betaRedInput hist@(_, input) expr = do
                 betaRedInput hist' expr    -- 元のexprを使用。
 
 pollInput :: Int -> (Bool, [Int]) -> IO (Bool, [Int])
-pollInput ix hist@(eof, input) = do
-    (eof, add) <- getNchar [] $ ix - length input + 1
+pollInput ix (_, input) = do
+    (eof', add) <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "---------------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
-    return (eof, input ++ add)
+    return (eof', input ++ add)
 
 getNchar :: [Int] -> Int -> IO (Bool, [Int])
 getNchar acc n
@@ -87,11 +68,11 @@ infinit hist expr = do
     -- putStrLn $ "infinit : " ++ show hist ++ " : " ++ show expr ++ " <<<<<<<<<<<<<<<<<<<<<<<<<<<"
     ret <- betaRedInput hist expr
     case ret of
-        ret2@(RedProg ix expr', hist') -> do
-            -- putStrLn ("Prog: " ++ show ret2)
+        (RedProg _  expr', hist') -> do
+            -- putStrLn ("Prog: " ++ show ret)
             infinit hist' expr'
-        ret2@(RedStop ix expr', hist') -> do
-            -- putStrLn ("Stop: " ++ show ret2)
+        (RedStop ix _   , hist') -> do
+            -- putStrLn ("Stop: " ++ show ret)
             if ix < 0 then return (expr, hist')
                         else infinit hist' expr
 
@@ -124,14 +105,14 @@ deconsLoop startTime countdown hist expr = do
             0 -> do
                 endTime <- getCPUTime
                 putStrLn $ "Time: " ++ show (fromIntegral (endTime - startTime) / 1e12) ++ " sec"
-            otherwise -> do
+            _ -> do
                 case (car, cdr) of
                     (L _ (V 1), L _ (V 1)) -> return ()
-                    otherwise -> deconsLoop startTime (countdown - 1) hist'' cdr
+                    _ -> deconsLoop startTime (countdown - 1) hist'' cdr
 
 prime :: IO ()
 prime = do
-    srcFile <- getArgs >>= return . head
+    srcFile <- getArgs >>= return . (!! 0)
     lazySrc <- readFile srcFile
     startTime <- getCPUTime
     case readLazyK srcFile lazySrc of
