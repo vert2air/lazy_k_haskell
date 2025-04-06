@@ -26,6 +26,17 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
         deriving (Eq)
 
+{- | Lazy K の標準入力の履歴と状態
+標準入力が End of File に達していれば、Bool が True。
+これまでの入力を [Int] に保持。
+標準入力で 256 を受けると EOF と見なされる。
+それ以降の入力は、256 が続く扱いになる。
+[Int] も 有効な入力以降に 256 が続くケースがありうる。
+標準入力は、0～255 の数値と、EOF の 256 を取りうるので、
+[Char] でなく [Int] にしている。
+-}
+data InHist = InHist Bool [Int] deriving (Show)
+
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
 lamSize (L s _)     = s

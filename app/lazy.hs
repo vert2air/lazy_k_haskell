@@ -3,12 +3,12 @@ import Data.Char (ord)
 import System.CPUTime (getCPUTime)
 import System.IO (isEOF)
 import System.Environment (getArgs)
-import LazyKCore ((%:), betaRed, RedResult(..),
+import LazyKCore ((%:), betaRed, RedResult(..), InHist(..),
     LamExpr(..), readLazyK, toLambda)
 
-decons :: (Bool, [Int])
+decons :: InHist
         -> LamExpr
-        -> IO (LamExpr, LamExpr, (Bool, [Int]))
+        -> IO (LamExpr, LamExpr, InHist)
 decons hist expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, hist)
@@ -20,9 +20,9 @@ decons hist expr =
                 if ix < 0 then error $ show ret
                           else decons hist' expr'
 
-betaRedInput :: (Bool, [Int])
+betaRedInput :: InHist
             -> LamExpr
-            -> IO (RedResult LamExpr, (Bool, [Int]))
+            -> IO (RedResult LamExpr, InHist)
 betaRedInput hist expr = do
     let ret = betaRed hist expr
     -- putStr "." -- ToDo 頻度調整
@@ -46,14 +46,14 @@ betaRedInput hist expr = do
                 hist' <- pollInput ix hist
                 betaRedInput hist' expr    -- 元のexprを使用。
 
-pollInput :: Int -> (Bool, [Int]) -> IO (Bool, [Int])
+pollInput :: Int -> InHist -> IO InHist
 pollInput ix (_, input) = do
     (eof', add) <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "---------------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
     return (eof', input ++ add)
 
-getNchar :: [Int] -> Int -> IO (Bool, [Int])
+getNchar :: [Int] -> Int -> IO InHist
 getNchar acc n
     | n <= 0 = return (False, acc)
     | otherwise = do
@@ -63,7 +63,7 @@ getNchar acc n
                   c <- getChar
                   getNchar (acc ++ [ord c]) (n - 1)
 
-infinit :: (Bool, [Int]) -> LamExpr -> IO (LamExpr, (Bool, [Int]))
+infinit :: InHist -> LamExpr -> IO (LamExpr, InHist)
 infinit hist expr = do
     -- putStrLn $ "infinit : " ++ show hist ++ " : " ++ show expr ++ " <<<<<<<<<<<<<<<<<<<<<<<<<<<"
     ret <- betaRedInput hist expr
@@ -85,7 +85,7 @@ countF (V 1) = Just 0
 countF (App _ (V 2) e) = (+1) <$> countF e
 countF _ = Nothing
 
-deconsLoop :: Integer -> Int -> (Bool, [Int]) -> LamExpr -> IO ()
+deconsLoop :: Integer -> Int -> InHist -> LamExpr -> IO ()
 deconsLoop startTime countdown hist expr = do
   (car, cdr, hist') <- decons hist expr
   (car_lam, hist'') <- infinit hist' car
