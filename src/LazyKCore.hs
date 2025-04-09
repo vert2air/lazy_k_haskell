@@ -348,7 +348,7 @@ instance Monad RedResult where
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
  -}
-betaRed :: (Bool, [Int])
+betaRed :: InHist
         -> LamExpr
         -> RedResult LamExpr
 betaRed hist                (L _ le)    = la <$> betaRed hist le
@@ -361,7 +361,7 @@ betaRed hist                (App _ (L _ le) e) = case once of
     _         -> RedProg (-1) once
   where
     once = comple (subst 1 e) le
-betaRed hist@(eof, input) e@(App s (In ix) oprd)
+betaRed hist@(InHist eof input) e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input = do
         cont <- betaRed hist $ App s (buildInput hist ix) oprd
@@ -377,7 +377,7 @@ betaRed hist              e@(App _ x y) = case betaRed hist x of
     RedProg _ e'@(L _ _) -> betaRed hist (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-betaRed hist@(eof, input) e@(In ix)
+betaRed hist@(InHist eof input) e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta還元は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg (length input) $ buildInput hist ix
@@ -386,10 +386,10 @@ betaRed hist@(eof, input) e@(In ix)
 betaRed _ e            = pure e    -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
-buildInput :: (Bool, [Int])  -- ^ EoFに達したら True, 実入力値のリスト
-            -> Int         -- ^ beta還元に必要なinputのインデックス
+buildInput :: InHist    -- ^ 標準入力の履歴
+            -> Int      -- ^ beta還元に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (eof, input) ix
+buildInput (InHist eof input) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
     | otherwise = error "buildInput: called under unexpected condition"

@@ -47,18 +47,18 @@ betaRedInput hist expr = do
                 betaRedInput hist' expr    -- 元のexprを使用。
 
 pollInput :: Int -> InHist -> IO InHist
-pollInput ix (_, input) = do
-    (eof', add) <- getNchar [] $ ix - length input + 1
+pollInput ix (InHist _ input) = do
+    InHist eof' add <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "---------------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
-    return (eof', input ++ add)
+    return $ InHist eof' $ input ++ add
 
 getNchar :: [Int] -> Int -> IO InHist
 getNchar acc n
-    | n <= 0 = return (False, acc)
+    | n <= 0 = return $ InHist False acc
     | otherwise = do
         eof <- isEOF
-        if eof then return (True, acc)
+        if eof then return $ InHist True acc
               else do
                   c <- getChar
                   getNchar (acc ++ [ord c]) (n - 1)
@@ -117,7 +117,7 @@ lazy = do
     startTime <- getCPUTime
     case readLazyK srcFile lazySrc of
         Right a -> do
-            deconsLoop startTime 10 (False, []) . toLambda $ a %: In(0)
+            deconsLoop startTime 10 (InHist False []) . toLambda $ a %: In(0)
         Left err -> do
             putStrLn $ "Error: " ++ show err
 
