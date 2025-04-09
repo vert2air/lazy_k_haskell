@@ -35,7 +35,7 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 標準入力は、0～255 の数値と、EOF の 256 を取りうるので、
 [Char] でなく [Int] にしている。
 -}
-data InHist = InHist Bool [Int] deriving (Show)
+data InHist = InHist !Bool ![Int] deriving (Show)
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
