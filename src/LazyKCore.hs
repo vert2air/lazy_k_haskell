@@ -35,7 +35,11 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 標準入力は、0～255 の数値と、EOF の 256 を取りうるので、
 [Char] でなく [Int] にしている。
 -}
-data InHist = InHist !Bool ![Int] deriving (Show)
+data IoInfo = IoInfo
+    { inEof :: !Bool
+    , inHist :: ![Int]
+    , progDot :: ProgDot
+    } deriving (Show)
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -313,34 +317,69 @@ jotToLam _ x   = error $ "Internal Error: jotToLam detect: " ++ [x]
  -}
 
 -- | Beta簡約の結果
-data RedResult e = RedStop Int e
+data RedResult e = RedStop ProgDot Int e
     -- ^ Intが負なら、簡約出来る箇所が無かった。
     --   Intが0以上なら、簡約出来る箇所を見付ける前に
     --   Inputプロミスにぶつかり、indexがIntの値だった。
-                | RedProg Int e
+                | RedProg ProgDot Int e
     -- ^ Intが負なら、簡約出来た。
     --   Intが0以上なら、一部簡約出来たが、その後、
     --   Inputプロミスにぶつかり、indexがIntの値だった。
     deriving (Show)
 
+forceProg :: RedResult e -> RedResult e
+forceProg (RedStop d i e) = RedProg d i e
+forceProg prog            = prog
+
+data ProgDot = ProgDot ![Int] deriving (Show)
+
+instance Default ProgDot where
+    def = ProgDot [0, 0]
+
+instance Num ProgDot where
+    (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
+    (*) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (*) d1 d2)
+    negate (ProgDot d) = ProgDot (map negate d)
+    abs (ProgDot d) = ProgDot (map abs d)
+    signum (ProgDot d) = ProgDot (map signum d)
+    fromInteger n = ProgDot [fromInteger n, 0]
+
+incPd :: Int -> RedResult e -> RedResult e
+incPd 1 (RedStop d i e) = RedStop (d + ProgDot [0, 1]) i e
+incPd 1 (RedProg d i e) = RedProg (d + ProgDot [0, 1]) i e
+
+incPds :: ProgDot -> RedResult e -> RedResult e
+incPds ds (RedStop d i e) = RedStop (d + ds) i e
+incPds ds (RedProg d i e) = RedProg (d + ds) i e
+
+isPdMature :: Int -> IoInfo -> ProgDot -> Bool
+isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
+    | n >= length mat || n < 0 = False
+    | otherwise = (d !! n) >= (mat !! n)
+
+clearPd :: Int -> ProgDot -> ProgDot
+clearPd n (ProgDot ioInf) = ProgDot $ zipWith setNto0 [0..] ioInf
+  where
+    setNto0 i x = if i == n then 0 else x
+
 instance Functor RedResult where
-    fmap f (RedStop i e) = RedStop i (f e)
-    fmap f (RedProg i e) = RedProg i (f e)
+    fmap f (RedStop pd i e) = RedStop pd i (f e)
+    fmap f (RedProg pd i e) = RedProg pd i (f e)
 
 instance Applicative RedResult where
-    pure = RedStop (-1)
-    RedStop i f <*> RedStop j e = RedStop (max i j) (f e)
-    RedStop i f <*> RedProg j e = RedProg (max i j) (f e)
-    RedProg i f <*> RedStop j e = RedProg (max i j) (f e)
-    RedProg i f <*> RedProg j e = RedProg (max i j) (f e)
+    pure = RedStop def (-1)
+    RedStop dF i f <*> RedStop dE j e = RedStop (dF + dE) (max i j) (f e)
+    RedStop dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
+    RedProg dF i f <*> RedStop dE j e = RedProg (dF + dE) (max i j) (f e)
+    RedProg dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
 
 instance Monad RedResult where
-    RedStop i e >>= f = case f e of
-        RedStop j e' -> RedStop (max i j) e'
-        RedProg j e' -> RedProg (max i j) e'
-    RedProg i e >>= f = case f e of
-        RedStop j e' -> RedProg (max i j) e'
-        RedProg j e' -> RedProg (max i j) e'
+    RedStop dE i e >>= f = case f e of
+        RedStop dF j e' -> RedStop (dE + dF) (max i j) e'
+        RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
+    RedProg dE i e >>= f = case f e of
+        RedStop dF j e' -> RedProg (dE + dF) (max i j) e'
+        RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
 
 {- | Beta簡約の実行 (入力の遅延評価対応)
 
@@ -348,48 +387,51 @@ instance Monad RedResult where
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
  -}
-betaRed :: InHist
+betaRed :: IoInfo
+        -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
-betaRed hist                (L _ le)    = la <$> betaRed hist le
-betaRed hist                (App _ (L _ le) e) = case once of
+betaRed ioInf d              (L _ le)    = la <$> betaRed ioInf d le
+betaRed ioInf d            e@(App _ (L _ _) _)
+    | isPdMature 1 ioInf d = RedStop d (-1) e
+betaRed ioInf d              (App _ (L _ le) e) = case once of
     -- beta簡約の結果が、再び関数適用だった。
     -- ここまで簡約出来る箇所が無かった結果ここで簡約を行ったので、
     -- 先頭から見直しても結局ここに戻ってくる。
     -- それは無駄なので、ここから betaRed を継続する。
-    App _ _ _ -> betaRed hist once >>= RedProg (-1)
-    _         -> RedProg (-1) once
+    App _ _ _ -> incPd 1 . forceProg $ betaRed ioInf d once
+    _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-betaRed hist@(InHist eof input) e@(App s (In ix) oprd)
+betaRed ioInf@(IoInfo eof input _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
-    | eof || ix < length input = do
-        cont <- betaRed hist $ App s (buildInput hist ix) oprd
-        RedProg (-1) cont  -- Inputプロミスを置換えたので必ずRedProg。
+    | eof || ix < length input =
+        forceProg $ betaRed ioInf d $ App s (buildInput ioInf ix) oprd 
     -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
-    | otherwise = RedStop ix e
-betaRed hist              e@(App _ x y) = case betaRed hist x of
-    RedStop i _
-        | i >= 0     -> RedStop i e  -- Inputプロミスでblockした。
-        | otherwise  -> RedStop i (x %:) <*> betaRed hist y
+    | otherwise = RedStop d ix e
+betaRed ioInf            d e@(App _ x y) = case betaRed ioInf d x of
+    RedStop d' i _
+        | isPdMature 1 ioInf d' -> RedStop d' i e
+        | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
+        | otherwise  -> RedStop def i (x %:) <*> betaRed ioInf d' y
     -- x で進展があったものの、関数適用であることには変わりない。
     -- しかし、x が (L _ _) なら、beta還元可能。
-    RedProg _ e'@(L _ _) -> betaRed hist (e' %: y)
+    RedProg d' _ e'@(L _ _) -> forceProg $ betaRed ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-betaRed hist@(InHist eof input) e@(In ix)
+betaRed ioInf@(IoInfo eof input _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta還元は出来ない。
     -- In がリストに変わるので、RedProg を返す。
-    | eof || ix < length input = RedProg (length input) $ buildInput hist ix
+    | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
     -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
-    | otherwise = RedStop ix e
-betaRed _ e            = pure e    -- V and Nm
+    | otherwise = RedStop d ix e
+betaRed _ d e            = incPds d $ return e     -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
-buildInput :: InHist    -- ^ 標準入力の履歴
+buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta還元に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (InHist eof input) ix
+buildInput (IoInfo eof input _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
     | otherwise = error "buildInput: called under unexpected condition"
@@ -525,12 +567,6 @@ isNil cc = case evalCC1 $ ChNumEval $ aux cc of
 -- Complement original value if it is evaluated to Nothing
 comple :: (a -> Maybe a) -> a -> a
 comple f a = maybe a id $ f a
-
-isName :: Char -> Bool
-isName a = isAlpha a || isDigit a || a == '_'
-
-isInitChar :: Char -> Bool
-isInitChar a = isAlpha a || a == '_'
 
 mergeApp :: (LamExpr -> Maybe LamExpr) -> LamExpr -> LamExpr -> Maybe LamExpr
 mergeApp f x y = case (f x, f y) of

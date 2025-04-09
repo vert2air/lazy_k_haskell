@@ -1,80 +1,100 @@
 import Debug.Trace (trace)
 import Data.Char (ord)
+import Data.Default (Default(..))
 import System.CPUTime (getCPUTime)
-import System.IO (isEOF)
+import System.IO (isEOF, hFlush, stdout)
 import System.Environment (getArgs)
-import LazyKCore ((%:), betaRed, RedResult(..), InHist(..),
-    LamExpr(..), readLazyK, toLambda)
+import LazyKCore ((%:), betaRed, forceProg,
+    LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
+    isPdMature, clearPd, readLazyK, toLambda)
 
-decons :: InHist
+decons :: IoInfo
+        -> ProgDot
         -> LamExpr
-        -> IO (LamExpr, LamExpr, InHist)
-decons hist expr =
+        -> IO (LamExpr, LamExpr, ProgDot, IoInfo)
+decons ioInf d expr =
   case expr of
-    L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, hist)
+    L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
     _ -> do
-        reded <- betaRedInput hist expr
+        reded <- betaRedInput ioInf d expr
         case reded of
-            (RedProg _ expr', hist') -> decons hist' expr'
-            ret@(RedStop ix expr', hist') -> do
-                if ix < 0 then error $ show ret
-                          else decons hist' expr'
+            (RedProg d' _ expr', ioInf') -> decons ioInf' d' expr'
+            ret@(RedStop d' ix expr', ioInf')
+                -- 進捗dotの表示タイミングか、inputブロック。再帰で処理。
+                | isPdMature 1 ioInf' d' || ix >= 0 ->
+                    decons ioInf' d' expr'
+                -- Lazy Kプログラムなら、scott encode の list を出力する筈。
+                -- cons の形でなく、beta簡約も進まないのなら、エラー。
+                | otherwise -> error $ "Invalid program: ret=" ++ show ret
 
-betaRedInput :: InHist
+betaRedInput :: IoInfo
+            -> ProgDot
             -> LamExpr
-            -> IO (RedResult LamExpr, InHist)
-betaRedInput hist expr = do
-    let ret = betaRed hist expr
-    -- putStr "." -- ToDo 頻度調整
+            -> IO (RedResult LamExpr, IoInfo)
+betaRedInput ioInf d expr = do
+    let ret = betaRed ioInf d expr
     -- case betaRedPar expr of
     case ret of
-        RedProg ix expr'
-            | ix < 0 -> do
+        RedProg d' _ expr'
+            | isPdMature 1 ioInf d' -> do
+                putStr "."
+                hFlush stdout
+                (red, ioInf'') <- betaRedInput ioInf (clearPd 1 d') expr'
+                return (forceProg red, ioInf'')
+        RedStop d' _ _
+            | isPdMature 1 ioInf d' -> do
+                putStr "."
+                hFlush stdout
+                betaRedInput ioInf (clearPd 1 d') expr
+        RedProg pd ix expr'
+            | ix < 0 && not (isPdMature 1 ioInf pd) -> do
                 -- putStrLn "---------------> RedProg minus"
-                return (ret, hist)
+                return (ret, ioInf)
             | otherwise -> do
                 -- putStrLn "---------------> RedProg Plus"
-                hist' <- pollInput ix hist
-                betaRedInput hist' expr'
-        RedStop ix _
+                ioInf' <- pollInput ix ioInf
+                (red, ioInf'') <- betaRedInput ioInf' pd expr'
+                return (forceProg red, ioInf'')
+        RedStop pd ix _
             | ix < 0 -> do
                 -- putStrLn "---------------> RedStop minus"
-                return (RedStop ix expr, hist) -- 元のexprを使用。
+                return (RedStop pd ix expr, ioInf) -- 元のexprを使用。
             | otherwise -> do
                 -- putStrLn "---------------> RedStop Plus"
                 -- putStrLn . show $ ret
-                hist' <- pollInput ix hist
-                betaRedInput hist' expr    -- 元のexprを使用。
+                ioInf' <- pollInput ix ioInf
+                betaRedInput ioInf' pd expr    -- 元のexprを使用。
 
-pollInput :: Int -> InHist -> IO InHist
-pollInput ix (InHist _ input) = do
-    InHist eof' add <- getNchar [] $ ix - length input + 1
+pollInput :: Int -> IoInfo -> IO IoInfo
+pollInput ix (IoInfo _ input pd) = do
+    IoInfo eof' add _ <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "---------------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
-    return $ InHist eof' $ input ++ add
+    return $ IoInfo eof' (input ++ add) pd
 
-getNchar :: [Int] -> Int -> IO InHist
+getNchar :: [Int] -> Int -> IO IoInfo
 getNchar acc n
-    | n <= 0 = return $ InHist False acc
+    | n <= 0 = return $ IoInfo False acc def
     | otherwise = do
         eof <- isEOF
-        if eof then return $ InHist True acc
+        if eof then return $ IoInfo True acc def
               else do
                   c <- getChar
                   getNchar (acc ++ [ord c]) (n - 1)
 
-infinit :: InHist -> LamExpr -> IO (LamExpr, InHist)
-infinit hist expr = do
-    -- putStrLn $ "infinit : " ++ show hist ++ " : " ++ show expr ++ " <<<<<<<<<<<<<<<<<<<<<<<<<<<"
-    ret <- betaRedInput hist expr
+infinit :: IoInfo -> ProgDot -> LamExpr -> IO (LamExpr, ProgDot, IoInfo)
+infinit ioInf pd expr = do
+    -- putStrLn $ "infinit : " ++ show ioInf ++ " : " ++ show expr ++ " <<<<<<"
+    ret <- betaRedInput ioInf pd expr
     case ret of
-        (RedProg _  expr', hist') -> do
+        (RedProg pd' _  expr', ioInf') -> do
             -- putStrLn ("Prog: " ++ show ret)
-            infinit hist' expr'
-        (RedStop ix _   , hist') -> do
-            -- putStrLn ("Stop: " ++ show ret)
-            if ix < 0 then return (expr, hist')
-                        else infinit hist' expr
+            infinit ioInf' pd' expr'
+        (RedStop pd' ix _   , ioInf')
+            | isPdMature 1 ioInf' pd' ->
+                error $ "Not Chuch Number" ++ show pd'
+            | ix < 0 -> return (expr, pd', ioInf')
+            | otherwise -> infinit ioInf' pd' expr
 
 getChNum :: LamExpr -> Maybe Int
 getChNum (L _ (L _ e)) = countF e
@@ -85,13 +105,10 @@ countF (V 1) = Just 0
 countF (App _ (V 2) e) = (+1) <$> countF e
 countF _ = Nothing
 
-deconsLoop :: Integer -> Int -> InHist -> LamExpr -> IO ()
-deconsLoop startTime countdown hist expr = do
-  (car, cdr, hist') <- decons hist expr
-  (car_lam, hist'') <- infinit hist' car
-  -- (car_lam2, hist'') <- infinit hist' car
-  -- putStrLn . show $ car_lam2
-  -- (car_lam, hist''') <- infinit hist'' car_lam2
+deconsLoop :: Integer -> ProgDot -> Int -> IoInfo -> LamExpr -> IO ()
+deconsLoop startTime pd countdown ioInf expr = do
+  (car, cdr, pd', ioInf') <- decons ioInf pd expr
+  (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
   let num = getChNum car_lam
   putStrLn "car info ----------"
   -- putStrLn . show $ car_lam
@@ -108,7 +125,7 @@ deconsLoop startTime countdown hist expr = do
             _ -> do
                 case (car, cdr) of
                     (L _ (V 1), L _ (V 1)) -> return ()
-                    _ -> deconsLoop startTime (countdown - 1) hist'' cdr
+                    _ -> deconsLoop startTime pd'' (countdown - 1) ioInf'' cdr
 
 lazy :: IO ()
 lazy = do
@@ -117,7 +134,8 @@ lazy = do
     startTime <- getCPUTime
     case readLazyK srcFile lazySrc of
         Right a -> do
-            deconsLoop startTime 10 (InHist False []) . toLambda $ a %: In(0)
+            deconsLoop startTime def 10 (IoInfo False [] (ProgDot [0, 20000]))
+                                                . toLambda $ a %: In(0)
         Left err -> do
             putStrLn $ "Error: " ++ show err
 
