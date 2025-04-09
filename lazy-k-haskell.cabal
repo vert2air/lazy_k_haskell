@@ -36,9 +36,9 @@ executable lazy
     main-is:          lazy.hs
     -- other-modules:
     -- other-extensions:
-    build-depends:
-        base ^>=4.21.0.0,
-        lazy-k-haskell
+    build-depends:  base ^>=4.21.0.0
+                  , data-default ^>=0.8.0.1
+                  , lazy-k-haskell
 
     hs-source-dirs:   app
     default-language: Haskell2010
