@@ -534,6 +534,9 @@ shallow vIdx (App _ m n) = mergeApp (shallow vIdx) m n
 shallow _    (Jot _ _)   = Nothing
 shallow _    (In _)      = Nothing
 
+
+{- 以降は使っていないが、後で速度比較をするために残しておく。
+
 {-
  - Lazy-K Interpreter
  -}
@@ -677,3 +680,4 @@ evalCC _    _        = Nothing
 evalCC1, evalCC2 :: ChNumEval -> Maybe ChNumEval
 evalCC1 = evalCC True
 evalCC2 = evalCC False
+-}
