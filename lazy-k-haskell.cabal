@@ -37,6 +37,7 @@ executable lazy
     -- other-modules:
     -- other-extensions:
     build-depends:  base ^>=4.21.0.0
+                  , split ^>=0.2.5
                   , data-default ^>=0.8.0.1
                   , lazy-k-haskell
 

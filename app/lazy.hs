@@ -1,12 +1,72 @@
+-- {-# LANGUAGE DeriveDataTypeable #-}
+-- {-# OPTIONS_GHC -fno-cse #-}
+
 import Debug.Trace (trace)
 import Data.Char (ord)
 import Data.Default (Default(..))
+import Data.List.Split (splitOn)
+import Data.Maybe (fromJust)
+-- import System.Console.CmdArgs ((&=), Data, Typeable, cmdArgs, help, args, name, typ, typFile)
+import Numeric (readDec)
+import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
+                              getOpt, usageInfo)
 import System.CPUTime (getCPUTime)
 import System.IO (isEOF, hFlush, stdout)
 import System.Environment (getArgs)
 import LazyKCore ((%:), betaRed, forceProg,
     LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
     isPdMature, clearPd, readLazyK, toLambda)
+
+data Flag = MaxOut Int
+          | Verbose Bool
+          | DotFreq ProgDot
+          deriving (Show)
+
+options :: [OptDescr Flag]
+options =
+    [ Option [] ["max"] (ReqArg (MaxOut . readInt) "COUNT") "Max output count"
+    , Option ['v'] [] (NoArg (Verbose True)) "Verbose output"
+    , Option ['d'] [] (ReqArg (DotFreq . ProgDot . map readInt . splitOn ",")
+                       "d0,d1") "Progress dot frequency"
+    ]
+
+-- | 文字列から、10進数取り出し
+readInt :: String -> Int
+readInt a = case readDec a of
+    [(b, _)] -> b
+    [] -> error $ "In parse argument, readInt: " ++ show a
+
+compileOpts :: [String] -> IO ([Flag], [String])
+compileOpts args = do
+    case getOpt Permute options args of
+        (o, n, []) -> return (o, n)
+        (_, _, errs) -> ioError $ userError
+                                $ concat errs ++ usageInfo header options
+  where header = "Usage: lazy [OPTION...] FILE"
+{-
+data Argument = Argument
+    { maxOut :: Int
+    , verbose :: Bool
+    , progDotFreq :: [Int]
+    , lazykFile :: String
+    } deriving (Show, Data, Typeable)
+
+argv :: Argument
+argv = Argument
+    { maxOut = 0 &= help "Max output count if > 0" &= typ "INT" &= name "max"
+    , verbose = False       &= help "Verbose output" &= name "v"
+    , progDotFreq = []  &= help "Progress dot" &= name "d" &= typ "[Int]"
+    -- , lazykFile = " "       &= help "LazyK source file" &= args &= typ "FILE"
+    , lazykFile = " "       &= args &= typFile
+    }
+-}
+main :: IO ()
+-- main = print =<< cmdArgs argv
+main = do
+    (options, [srcFile]) <- compileOpts =<< getArgs
+    -- print res
+    putStrLn . show $ options
+    lazy srcFile
 
 decons :: IoInfo
         -> ProgDot
@@ -68,7 +128,7 @@ betaRedInput ioInf d expr = do
 pollInput :: Int -> IoInfo -> IO IoInfo
 pollInput ix (IoInfo _ input pd) = do
     IoInfo eof' add _ <- getNchar [] $ ix - length input + 1
-    -- putStrLn $ "---------------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
+    -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
     return $ IoInfo eof' (input ++ add) pd
 
@@ -121,15 +181,17 @@ deconsLoop startTime pd countdown ioInf expr = do
     _ -> case countdown of
             0 -> do
                 endTime <- getCPUTime
-                putStrLn $ "Time: " ++ show (fromIntegral (endTime - startTime) / 1e12) ++ " sec"
+                putStrLn $ "Time: "
+                        ++ show (fromIntegral (endTime - startTime) / 1e12)
+                        ++ " sec"
             _ -> do
                 case (car, cdr) of
                     (L _ (V 1), L _ (V 1)) -> return ()
                     _ -> deconsLoop startTime pd'' (countdown - 1) ioInf'' cdr
 
-lazy :: IO ()
-lazy = do
-    srcFile <- getArgs >>= return . (!! 0)
+lazy :: String -> IO ()
+lazy srcFile = do
+    -- srcFile <- getArgs >>= return . (!! 0)
     lazySrc <- readFile srcFile
     startTime <- getCPUTime
     case readLazyK srcFile lazySrc of
@@ -139,5 +201,3 @@ lazy = do
         Left err -> do
             putStrLn $ "Error: " ++ show err
 
-main :: IO ()
-main = lazy
