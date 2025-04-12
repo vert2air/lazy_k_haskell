@@ -1,6 +1,8 @@
 -- {-# LANGUAGE DeriveDataTypeable #-}
 -- {-# OPTIONS_GHC -fno-cse #-}
 
+-- import Prelude hiding (readFile, putStrLn, getArgs)
+-- import System.IO.Encoding (readFile, putStrLn, getArgs)
 import Debug.Trace (trace)
 -- import Data.Char (ord)
 import Data.Default (Default(..))
@@ -10,7 +12,7 @@ import Numeric (readDec)
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
                               getOpt, usageInfo)
 import System.CPUTime (getCPUTime)
--- import System.IO (isEOF, hFlush, stdout)
+import System.IO (isEOF, hFlush, hPutStrLn, stderr, stdout)
 import System.Environment (getArgs)
 import LazyKCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                   readLazyK, toLambda)
@@ -62,24 +64,37 @@ argv = Argument
 main :: IO ()
 -- main = print =<< cmdArgs argv
 main = do
+    -- let ?enc = UTF8
+    -- Windows では、Shellコマンド chcp で、UTF-8にしておく。
+    -- /c/Windows/System32/chcp.com 65001
     (opts, [srcFile]) <- compileOpts =<< getArgs
-    -- print res
-    putStrLn . show $ opts
-    lazy srcFile
+    -- putStrLn . show $ opts
+    let for = flip map
+        forAny = flip any
+        maxOut = maximum . (Nothing:) $ for opts $ \op -> case op of
+                        (MaxOut n) -> Just n
+                        _ -> Nothing
+        verbose = forAny opts $ \op -> case op of
+                        (Verbose _) -> True
+                        _ -> False
+        dotFreq = maximum . (ProgDot [0, 0]:) $ for opts $ \op -> case op of
+                        (DotFreq d) -> d
+                        _ -> ProgDot [0, 0]
+    lazy maxOut srcFile
 
-lazy :: String -> IO ()
-lazy srcFile = do
-    -- srcFile <- getArgs >>= return . (!! 0)
+lazy :: Maybe Int -> String -> IO ()
+lazy maxOut srcFile = do
     lazySrc <- readFile srcFile
     startTime <- getCPUTime
+    hPutStrLn stderr $ "Start time : " ++ show startTime
     case readLazyK srcFile lazySrc of
         Right a -> do
-            deconsLoop def 10 (IoInfo False [] (ProgDot [0, 20000]))
+            deconsLoop def maxOut (IoInfo False [] (ProgDot [0, 20000]))
                                                 . toLambda $ a %: In(0)
             endTime <- getCPUTime
-            putStrLn $ "Time: "
+            hPutStrLn stderr $ "Time: "
                     ++ show (fromIntegral (endTime - startTime) / 1e12)
                     ++ " sec"
         Left err -> do
-            putStrLn $ "Error: " ++ show err
+            hPutStrLn stderr $ "Error: " ++ show err
 

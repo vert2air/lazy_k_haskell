@@ -1,8 +1,8 @@
 module LazyKParts where
 
-import Data.Char (ord)
+import Data.Char (chr, ord)
 import Data.Default (Default(..))
-import System.IO (isEOF, hFlush, stdout)
+import System.IO (isEOF, hFlush, hPutStrLn, stderr, stdout)
 
 import LazyKCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
                   betaRed, forceProg, isPdMature, clearPd)
@@ -104,22 +104,19 @@ countF (V 1) = Just 0
 countF (App _ (V 2) e) = (+1) <$> countF e
 countF _ = Nothing
 
-deconsLoop :: ProgDot -> Int -> IoInfo -> LamExpr -> IO ()
+deconsLoop :: ProgDot -> Maybe Int -> IoInfo -> LamExpr -> IO ()
+deconsLoop pd (Just 0)  ioInf expr = return ()
 deconsLoop pd countdown ioInf expr = do
-  (car, cdr, pd', ioInf') <- decons ioInf pd expr
-  (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
-  let num = getChNum car_lam
-  putStrLn "car info ----------"
-  -- putStrLn . show $ car_lam
-  putStrLn . show $ num
-  case num of
-    Just n
-        | n >= 256 -> do
-            -- putStrLn $ "Reach EOF"
-            return ()
-    _ -> case countdown of
-            0 -> return ()
-            _ -> do
-                case (car, cdr) of
-                    (L _ (V 1), L _ (V 1)) -> return ()
-                    _ -> deconsLoop pd'' (countdown - 1) ioInf'' cdr
+    (car, cdr, pd', ioInf') <- decons ioInf pd expr
+    (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
+    let num = getChNum car_lam
+    case num of
+        Just n
+            | n < 256 -> do
+                hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
+                putChar $ chr n
+                hFlush stdout
+                deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
+            | otherwise -> do
+                hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
+        _ -> hPutStrLn stderr $ "car is not number"

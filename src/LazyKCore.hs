@@ -221,6 +221,7 @@ readLazyK title input = case parse exprs title . trimComment $ input of
     Right val -> Right val
   where
     trimComment = unlines . map untilHash . lines
+    -- コメントの先頭(='#') まで、または全行を取り出す。
     untilHash = \ln -> maybe ln (\ix -> take ix ln) $ '#' `elemIndex` ln
 
 bindIdx :: [String] -> LamExpr -> LamExpr
@@ -331,7 +332,7 @@ forceProg :: RedResult e -> RedResult e
 forceProg (RedStop d i e) = RedProg d i e
 forceProg prog            = prog
 
-data ProgDot = ProgDot ![Int] deriving (Show)
+data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
 
 instance Default ProgDot where
     def = ProgDot [0, 0]
