@@ -534,6 +534,22 @@ shallow vIdx (App _ m n) = mergeApp (shallow vIdx) m n
 shallow _    (Jot _ _)   = Nothing
 shallow _    (In _)      = Nothing
 
+{-
+ - Common Utility Functions
+ -}
+
+-- |
+-- Complement original value if it is evaluated to Nothing
+comple :: (a -> Maybe a) -> a -> a
+comple f a = maybe a id $ f a
+
+mergeApp :: (LamExpr -> Maybe LamExpr) -> LamExpr -> LamExpr -> Maybe LamExpr
+mergeApp f x y = case (f x, f y) of
+    (Just x', Just y') -> Just $ x' %: y'
+    (Just x', Nothing) -> Just $ x' %: y
+    (Nothing, Just y') -> Just $ x  %: y'
+    _                  -> Nothing
+
 
 {- 以降は使っていないが、後で速度比較をするために残しておく。
 
@@ -561,22 +577,6 @@ isNil cc = case evalCC1 $ ChNumEval $ aux cc of
             _                            -> False
   where
     aux a = a %: (Nm "K" %: (Nm "K" %: (Nm "K" %: Nm "False"))) %: Nm "True"
-
-{-
- - Common Utility Functions
- -}
-
--- |
--- Complement original value if it is evaluated to Nothing
-comple :: (a -> Maybe a) -> a -> a
-comple f a = maybe a id $ f a
-
-mergeApp :: (LamExpr -> Maybe LamExpr) -> LamExpr -> LamExpr -> Maybe LamExpr
-mergeApp f x y = case (f x, f y) of
-    (Just x', Just y') -> Just $ x' %: y'
-    (Just x', Nothing) -> Just $ x' %: y
-    (Nothing, Just y') -> Just $ x  %: y'
-    _                  -> Nothing
 
 stepN :: (a -> Maybe a) -> Int -> a -> a
 stepN _ 0 e = e
