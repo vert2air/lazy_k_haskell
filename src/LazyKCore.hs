@@ -4,17 +4,15 @@ module LazyKCore where
 
 import Debug.Trace (trace)
 import           Data.Default (Default(..))
-import           Data.Char (isAlpha, isDigit, isSpace, toUpper, toLower)
+import           Data.Char (isDigit, isSpace, toUpper, toLower)
 import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces)
-import           Text.Printf (printf)
 
-{- | ラムダ式
- -}
+-- | ラムダ式
 data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
             | L !Int LamExpr    -- ^ Lambda抽象。
             | App !Int LamExpr LamExpr  -- ^ 関数適用。
@@ -215,6 +213,7 @@ digLamAbst mng e@(L _ lexp) = case newName of
     (newName, mng_ent) = enterLambda mng e
     Stringifying ret _ mng_new = toNamedString mng_ent lexp
     mng_ret = leaveLambda mng_new
+digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 
 readLazyK :: String -> String -> Either String LamExpr
 readLazyK title input = case parse exprs title . trimComment $ input of
@@ -349,6 +348,9 @@ instance Num ProgDot where
 incPd :: Int -> RedResult e -> RedResult e
 incPd 1 (RedStop d i e) = RedStop (d + ProgDot [0, 1]) i e
 incPd 1 (RedProg d i e) = RedProg (d + ProgDot [0, 1]) i e
+incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
+incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
+incPd _ r               = r
 
 incPds :: ProgDot -> RedResult e -> RedResult e
 incPds ds (RedStop d i e) = RedStop (d + ds) i e
@@ -512,12 +514,13 @@ abstElim (L _ (V v))
     | v == 1      = Just $ Nm "I" -- Rule 4
     | otherwise   = error $ "out of rule 4: " ++ show (la $ V v)
 abstElim (L _ inner@(L _ le))
-    | hasVar 2 le = Just . comple abstElim . la . comple abstElim $ inner -- R.5
+    | hasVar 2 le = Just . comple abstElim . la . comple abstElim $ inner --R.5
     | otherwise   = error $ "out of rule 5: " ++ show (la inner)
 abstElim (L _ (App _ m (V 1)))
     | not (hasVar 1 m) = Just . comple (shallow 1) $ m  -- Eta reduction
 abstElim (L _ (App _ m n)) =
     Just $ Nm "S" %: comple abstElim (la m) %: comple abstElim (la n) -- Rule 6
+abstElim (L _ (In _)) = Nothing
 
 hasVar :: Int -> LamExpr -> Bool
 hasVar _    (Nm _)      = False

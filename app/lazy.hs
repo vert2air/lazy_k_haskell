@@ -35,7 +35,7 @@ options =
 readInt :: String -> Int
 readInt a = case readDec a of
     [(b, _)] -> b
-    [] -> error $ "In parse argument, readInt: " ++ show a
+    _        -> error $ "In parse argument, readInt: " ++ show a
 
 compileOpts :: [String] -> IO ([Flag], [String])
 compileOpts args = do
@@ -93,10 +93,9 @@ lazy ioInf maxOut srcFile = do
         Right a -> do
             deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
             endTime <- getCPUTime
-            onlyV ioInf $
-                hPutStrLn stderr $ "Time: "
-                    ++ show (fromIntegral (endTime - startTime) / 1e12)
-                    ++ " sec"
+            onlyV ioInf $ do
+                let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
+                hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
 
