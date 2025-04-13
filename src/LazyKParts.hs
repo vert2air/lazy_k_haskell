@@ -1,0 +1,145 @@
+module LazyKParts where
+
+import Data.Char (chr, ord)
+import Data.Default (Default(..))
+import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
+
+import LazyKCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
+                  betaRed, forceProg, isPdMature, clearPd)
+
+-- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
+deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
+        -> IoInfo       -- ^ 入力情報と出力関係のオプション
+        -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
+        -> IO ()
+deconsLoop _  (Just 0)  _     _    = return ()
+deconsLoop pd countdown ioInf expr = do
+    (car, cdr, pd', ioInf') <- decons ioInf pd expr
+    (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
+    let num = getChNum car_lam
+    case num of
+        Just n
+            | n < 256 -> do
+                onlyV ioInf'' $
+                    hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
+                putChar $ chr n
+                hFlush stdout
+                deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
+            | otherwise -> do
+                onlyV ioInf'' $
+                    hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
+        _ -> hPutStrLn stderr $ "car is not number"
+
+-- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
+decons :: IoInfo     -- ^ 入力情報と出力関係のオプション
+        -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> LamExpr   -- ^ 分割すべき Scott encoding のリスト
+        -> IO (LamExpr, LamExpr, ProgDot, IoInfo)
+decons ioInf d expr =
+  case expr of
+    L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
+    _ -> do
+        reded <- betaRedInput ioInf d expr
+        case reded of
+            (RedProg d' _ expr', ioInf') -> decons ioInf' d' expr'
+            ret@(RedStop d' ix expr', ioInf')
+                -- 進捗dotの表示タイミングか、inputブロック。再帰で処理。
+                | isPdMature 1 ioInf' d' || ix >= 0 ->
+                    decons ioInf' d' expr'
+                -- Lazy Kプログラムなら、scott encode の list を出力する筈。
+                -- cons の形でなく、beta簡約も進まないのなら、エラー。
+                | otherwise -> error $ "Invalid program: ret=" ++ show ret
+
+-- | Beta簡約 (遅延入力対応)
+betaRedInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
+            -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+            -> LamExpr   -- ^ beta簡約対象のラムダ式
+            -> IO (RedResult LamExpr, IoInfo)
+betaRedInput ioInf d expr = do
+    let ret = betaRed ioInf d expr
+    -- case betaRedPar expr of
+    case ret of
+        RedProg d' _ expr'
+            | isPdMature 1 ioInf d' -> do
+                hPutStr stderr "."
+                hFlush stderr
+                (red, ioInf'') <- betaRedInput ioInf (clearPd 1 d') expr'
+                return (forceProg red, ioInf'')
+        RedStop d' _ _
+            | isPdMature 1 ioInf d' -> do
+                hPutStr stderr "."
+                hFlush stderr
+                betaRedInput ioInf (clearPd 1 d') expr
+        RedProg pd ix expr'
+            | ix < 0 && not (isPdMature 1 ioInf pd) -> do
+                -- putStrLn "---------------> RedProg minus"
+                return (ret, ioInf)
+            | otherwise -> do
+                -- putStrLn "---------------> RedProg Plus"
+                ioInf' <- pollInput ix ioInf
+                (red, ioInf'') <- betaRedInput ioInf' pd expr'
+                return (forceProg red, ioInf'')
+        RedStop pd ix _
+            | ix < 0 -> do
+                -- putStrLn "---------------> RedStop minus"
+                return (RedStop pd ix expr, ioInf) -- 元のexprを使用。
+            | otherwise -> do
+                -- putStrLn "---------------> RedStop Plus"
+                -- putStrLn . show $ ret
+                ioInf' <- pollInput ix ioInf
+                betaRedInput ioInf' pd expr    -- 元のexprを使用。
+
+{- | 入力の ix番目までの文字を取得
+
+- 取得した文字を追加の IoInfo を返す。
+- ix番目まで入力されるまで、blocking。
+-}
+pollInput :: Int -> IoInfo -> IO IoInfo
+pollInput ix (IoInfo _ input _ pd) = do
+    IoInfo eof' add _ _ <- getNchar [] $ ix - length input + 1
+    -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
+    -- putStrLn $ "                " ++ show (input ++ add)
+    return $ IoInfo eof' (input ++ add) False pd
+
+getNchar :: [Int] -> Int -> IO IoInfo
+getNchar acc n
+    | n <= 0 = return $ IoInfo False acc False def
+    | otherwise = do
+        eof <- isEOF
+        if eof then return $ IoInfo True acc False def
+              else do
+                  c <- getChar
+                  getNchar (acc ++ [ord c]) (n - 1)
+
+-- | expr に可能な限りbeta簡約を再帰実行 (遅延入力対応)
+infinit :: IoInfo -> ProgDot -> LamExpr -> IO (LamExpr, ProgDot, IoInfo)
+infinit ioInf pd expr = do
+    -- putStrLn $ "infinit : " ++ show ioInf ++ " : " ++ show expr ++ " <<<<<<"
+    ret <- betaRedInput ioInf pd expr
+    case ret of
+        (RedProg pd' _  expr', ioInf') -> do
+            -- putStrLn ("Prog: " ++ show ret)
+            infinit ioInf' pd' expr'
+        (RedStop pd' ix _   , ioInf')
+            | isPdMature 1 ioInf' pd' ->
+                error $ "Not Chuch Number" ++ show pd'
+            | ix < 0 -> return (expr, pd', ioInf')
+            | otherwise -> infinit ioInf' pd' expr
+
+-- | 引数を Church encoding の自然数として幾らかを算出
+getChNum :: LamExpr -> Maybe Int
+getChNum (L _ (L _ llexp)) = countF llexp
+  where
+    countF (V 1) = Just 0
+    countF (App _ (V 2) e) = (+1) <$> countF e
+    countF _ = Nothing
+getChNum _ = Nothing
+
+-- | -vオプション指定時のみactを実行し、最後にstderrをflush
+onlyV :: IoInfo -> IO () -> IO ()
+onlyV ioInf act = if optV ioInf
+    then do
+        act
+        hFlush stderr
+    else return ()

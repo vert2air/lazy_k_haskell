@@ -4,17 +4,15 @@ module LazyKCore where
 
 import Debug.Trace (trace)
 import           Data.Default (Default(..))
-import           Data.Char (isAlpha, isDigit, isSpace, toUpper, toLower)
+import           Data.Char (isDigit, isSpace, toUpper, toLower)
 import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces)
-import           Text.Printf (printf)
 
-{- | ラムダ式
- -}
+-- | ラムダ式
 data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
             | L !Int LamExpr    -- ^ Lambda抽象。
             | App !Int LamExpr LamExpr  -- ^ 関数適用。
@@ -26,20 +24,15 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
         deriving (Eq)
 
-{- | Lazy K の標準入力の履歴と状態
-標準入力が End of File に達していれば、Bool が True。
-これまでの入力を [Int] に保持。
-標準入力で 256 を受けると EOF と見なされる。
-それ以降の入力は、256 が続く扱いになる。
-[Int] も 有効な入力以降に 256 が続くケースがありうる。
-標準入力は、0～255 の数値と、EOF の 256 を取りうるので、
-[Char] でなく [Int] にしている。
--}
+-- | Lazy Kプログラムの入力状態と、出力オプション
 data IoInfo = IoInfo
-    { inEof :: !Bool
-    , inHist :: ![Int]
-    , progDot :: ProgDot
-    } deriving (Show)
+    { inEof :: !Bool    -- ^ 標準入力が EOF に達したか。
+    , inHist :: ![Int]  -- ^ 受信済みの標準入力データ。
+                        -- EOF 到達後のインデックスを読み出した場合、
+                        -- 256 が補完される。
+    , optV :: !Bool      -- ^ 起動時に-vオプションが指定されているか。
+    , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
+    } deriving (Eq, Ord, Show)
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -47,10 +40,12 @@ lamSize (L s _)     = s
 lamSize (Jot s _)   = s
 lamSize _           = 1
 
+-- | 関数適用の演算子
 infixl 5 %:
 (%:) :: LamExpr -> LamExpr -> LamExpr
 a %: b = App (1 + lamSize a + lamSize b) a b
 
+-- | ラムダ抽象の演算子
 la :: LamExpr -> LamExpr
 la a = L (1 + lamSize a) a
 
@@ -73,8 +68,7 @@ instance Default NameManager where
         , nmUnlamStyle = False
         }
 
-{- | NameMamager の命名ポリシー
- -}
+-- | NameMamager の命名ポリシー
 data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表示。
                 | PK_single_use -- ^ 全てのラムダ抽象に、異なる名前を付ける。
                 | PK_level      -- ^ ラムダ抽象の深さに応じて、名前を付ける。
@@ -82,6 +76,7 @@ data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表
                                 -- Poolの消費が最小になるように名前を付ける。
     deriving (Eq, Ord, Show)
 
+-- | ラムダ式を表示する際に変数に名前を付けるための管理データ
 data NameManager = NameManager
     { nmPolicy :: PolicyKind -- ^ Policy for name management
     , nmPool  :: String  -- ^ 払い出す名前のプール。
@@ -94,8 +89,9 @@ data NameManager = NameManager
     } deriving (Show)
 
 {- | ラムダ抽象への名前の付与
- - ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
- - 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
+
+ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
+付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
  -}
 enterLambda :: NameManager -> LamExpr -> (String, NameManager)
 enterLambda mng@NameManager{nmPolicy = PK_index} _ = (" ", mng)
@@ -123,10 +119,9 @@ leaveLambda :: NameManager -> NameManager
 leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
 leaveLambda     NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
 
-{- | 自由変数の一覧取得 (入力プロミスを含む)
- -}
+-- | 自由変数の一覧取得 (入力プロミスを含む)
 getFreeVars :: LamExpr  -- ^ 取得対象のラムダ式
-        -> Int
+        -> Int          -- ^ ラムダ抽象の深さ。ラムダ抽象が無ければ 0。
         -> (S.Set String, S.Set Int)
 getFreeVars (V v) dep
     | v > dep = (S.empty, S.singleton (v - dep))
@@ -146,9 +141,10 @@ getFreeVars _       _ = (S.empty, S.empty)
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
 
+-- | ラムダ式を文字列化した結果の情報
 data Stringifying = Stringifying String StyleInfoKind NameManager
 
--- Input : Any LamExpr
+-- | ラムダ式を文字列化
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
   where
@@ -214,13 +210,18 @@ digLamAbst mng e@(L _ lexp) = case newName of
     (newName, mng_ent) = enterLambda mng e
     Stringifying ret _ mng_new = toNamedString mng_ent lexp
     mng_ret = leaveLambda mng_new
+digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 
-readLazyK :: String -> String -> Either String LamExpr
+-- | Lazy Kソースを含めたラムダ式の文字列の読み込み
+readLazyK :: String -- ^ 読み込むソースのタイトル
+        -> String   -- ^ 読み込むソースの内容
+        -> Either String LamExpr
 readLazyK title input = case parse exprs title . trimComment $ input of
     Left err  -> Left $ show err
     Right val -> Right val
   where
     trimComment = unlines . map untilHash . lines
+    -- コメントの先頭(='#') まで、または全行を取り出す。
     untilHash = \ln -> maybe ln (\ix -> take ix ln) $ '#' `elemIndex` ln
 
 bindIdx :: [String] -> LamExpr -> LamExpr
@@ -331,7 +332,7 @@ forceProg :: RedResult e -> RedResult e
 forceProg (RedStop d i e) = RedProg d i e
 forceProg prog            = prog
 
-data ProgDot = ProgDot ![Int] deriving (Show)
+data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
 
 instance Default ProgDot where
     def = ProgDot [0, 0]
@@ -347,6 +348,9 @@ instance Num ProgDot where
 incPd :: Int -> RedResult e -> RedResult e
 incPd 1 (RedStop d i e) = RedStop (d + ProgDot [0, 1]) i e
 incPd 1 (RedProg d i e) = RedProg (d + ProgDot [0, 1]) i e
+incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
+incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
+incPd _ r               = r
 
 incPds :: ProgDot -> RedResult e -> RedResult e
 incPds ds (RedStop d i e) = RedStop (d + ds) i e
@@ -354,8 +358,9 @@ incPds ds (RedProg d i e) = RedProg (d + ds) i e
 
 isPdMature :: Int -> IoInfo -> ProgDot -> Bool
 isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
+    | mat !! n == 0            = False
     | n >= length mat || n < 0 = False
-    | otherwise = (d !! n) >= (mat !! n)
+    | otherwise                = (d !! n) >= (mat !! n)
 
 clearPd :: Int -> ProgDot -> ProgDot
 clearPd n (ProgDot ioInf) = ProgDot $ zipWith setNto0 [0..] ioInf
@@ -403,7 +408,7 @@ betaRed ioInf d              (App _ (L _ le) e) = case once of
     _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-betaRed ioInf@(IoInfo eof input _) d e@(App s (In ix) oprd)
+betaRed ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
         forceProg $ betaRed ioInf d $ App s (buildInput ioInf ix) oprd 
@@ -419,7 +424,7 @@ betaRed ioInf            d e@(App _ x y) = case betaRed ioInf d x of
     RedProg d' _ e'@(L _ _) -> forceProg $ betaRed ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-betaRed ioInf@(IoInfo eof input _) d e@(In ix)
+betaRed ioInf@(IoInfo eof input _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta還元は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
@@ -431,7 +436,7 @@ betaRed _ d e            = incPds d $ return e     -- V and Nm
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta還元に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (IoInfo eof input _) ix
+buildInput (IoInfo eof input _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
     | otherwise = error "buildInput: called under unexpected condition"
@@ -509,12 +514,13 @@ abstElim (L _ (V v))
     | v == 1      = Just $ Nm "I" -- Rule 4
     | otherwise   = error $ "out of rule 4: " ++ show (la $ V v)
 abstElim (L _ inner@(L _ le))
-    | hasVar 2 le = Just . comple abstElim . la . comple abstElim $ inner -- R.5
+    | hasVar 2 le = Just . comple abstElim . la . comple abstElim $ inner --R.5
     | otherwise   = error $ "out of rule 5: " ++ show (la inner)
 abstElim (L _ (App _ m (V 1)))
     | not (hasVar 1 m) = Just . comple (shallow 1) $ m  -- Eta reduction
 abstElim (L _ (App _ m n)) =
     Just $ Nm "S" %: comple abstElim (la m) %: comple abstElim (la n) -- Rule 6
+abstElim (L _ (In _)) = Nothing
 
 hasVar :: Int -> LamExpr -> Bool
 hasVar _    (Nm _)      = False
@@ -533,6 +539,25 @@ shallow vIdx (L _ le)    = la <$> shallow (vIdx + 1) le
 shallow vIdx (App _ m n) = mergeApp (shallow vIdx) m n
 shallow _    (Jot _ _)   = Nothing
 shallow _    (In _)      = Nothing
+
+{-
+ - Common Utility Functions
+ -}
+
+-- |
+-- Complement original value if it is evaluated to Nothing
+comple :: (a -> Maybe a) -> a -> a
+comple f a = maybe a id $ f a
+
+mergeApp :: (LamExpr -> Maybe LamExpr) -> LamExpr -> LamExpr -> Maybe LamExpr
+mergeApp f x y = case (f x, f y) of
+    (Just x', Just y') -> Just $ x' %: y'
+    (Just x', Nothing) -> Just $ x' %: y
+    (Nothing, Just y') -> Just $ x  %: y'
+    _                  -> Nothing
+
+
+{- 以降は使っていないが、後で速度比較をするために残しておく。
 
 {-
  - Lazy-K Interpreter
@@ -558,22 +583,6 @@ isNil cc = case evalCC1 $ ChNumEval $ aux cc of
             _                            -> False
   where
     aux a = a %: (Nm "K" %: (Nm "K" %: (Nm "K" %: Nm "False"))) %: Nm "True"
-
-{-
- - Common Utility Functions
- -}
-
--- |
--- Complement original value if it is evaluated to Nothing
-comple :: (a -> Maybe a) -> a -> a
-comple f a = maybe a id $ f a
-
-mergeApp :: (LamExpr -> Maybe LamExpr) -> LamExpr -> LamExpr -> Maybe LamExpr
-mergeApp f x y = case (f x, f y) of
-    (Just x', Just y') -> Just $ x' %: y'
-    (Just x', Nothing) -> Just $ x' %: y
-    (Nothing, Just y') -> Just $ x  %: y'
-    _                  -> Nothing
 
 stepN :: (a -> Maybe a) -> Int -> a -> a
 stepN _ 0 e = e
@@ -677,3 +686,4 @@ evalCC _    _        = Nothing
 evalCC1, evalCC2 :: ChNumEval -> Maybe ChNumEval
 evalCC1 = evalCC True
 evalCC2 = evalCC False
+-}
