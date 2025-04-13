@@ -12,11 +12,11 @@ import Numeric (readDec)
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
                               getOpt, usageInfo)
 import System.CPUTime (getCPUTime)
-import System.IO (isEOF, hFlush, hPutStrLn, stderr, stdout)
+import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
 import LazyKCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                   readLazyK, toLambda)
-import LazyKParts (deconsLoop)
+import LazyKParts (deconsLoop, onlyV)
 
 data Flag = MaxOut Int
           | Verbose Bool
@@ -80,19 +80,21 @@ main = do
         dotFreq = maximum . (ProgDot [0, 0]:) $ for opts $ \op -> case op of
                         (DotFreq d) -> d
                         _ -> ProgDot [0, 0]
-    lazy maxOut srcFile
+        ioInf = IoInfo False [] verbose dotFreq
+    lazy ioInf maxOut srcFile
 
-lazy :: Maybe Int -> String -> IO ()
-lazy maxOut srcFile = do
+lazy :: IoInfo -> Maybe Int -> String -> IO ()
+lazy ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
     startTime <- getCPUTime
-    hPutStrLn stderr $ "Start time : " ++ show startTime
+    onlyV ioInf $
+        hPutStrLn stderr $ "Start time : " ++ show startTime
     case readLazyK srcFile lazySrc of
         Right a -> do
-            deconsLoop def maxOut (IoInfo False [] (ProgDot [0, 20000]))
-                                                . toLambda $ a %: In(0)
+            deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
             endTime <- getCPUTime
-            hPutStrLn stderr $ "Time: "
+            onlyV ioInf $
+                hPutStrLn stderr $ "Time: "
                     ++ show (fromIntegral (endTime - startTime) / 1e12)
                     ++ " sec"
         Left err -> do

@@ -38,6 +38,7 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 data IoInfo = IoInfo
     { inEof :: !Bool
     , inHist :: ![Int]
+    , optV :: !Bool
     , progDot :: ProgDot
     } deriving (Show)
 
@@ -355,8 +356,9 @@ incPds ds (RedProg d i e) = RedProg (d + ds) i e
 
 isPdMature :: Int -> IoInfo -> ProgDot -> Bool
 isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
+    | mat !! n == 0            = False
     | n >= length mat || n < 0 = False
-    | otherwise = (d !! n) >= (mat !! n)
+    | otherwise                = (d !! n) >= (mat !! n)
 
 clearPd :: Int -> ProgDot -> ProgDot
 clearPd n (ProgDot ioInf) = ProgDot $ zipWith setNto0 [0..] ioInf
@@ -404,7 +406,7 @@ betaRed ioInf d              (App _ (L _ le) e) = case once of
     _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-betaRed ioInf@(IoInfo eof input _) d e@(App s (In ix) oprd)
+betaRed ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
         forceProg $ betaRed ioInf d $ App s (buildInput ioInf ix) oprd 
@@ -420,7 +422,7 @@ betaRed ioInf            d e@(App _ x y) = case betaRed ioInf d x of
     RedProg d' _ e'@(L _ _) -> forceProg $ betaRed ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-betaRed ioInf@(IoInfo eof input _) d e@(In ix)
+betaRed ioInf@(IoInfo eof input _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta還元は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
@@ -432,7 +434,7 @@ betaRed _ d e            = incPds d $ return e     -- V and Nm
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta還元に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (IoInfo eof input _) ix
+buildInput (IoInfo eof input _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
     | otherwise = error "buildInput: called under unexpected condition"

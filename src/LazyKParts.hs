@@ -2,7 +2,7 @@ module LazyKParts where
 
 import Data.Char (chr, ord)
 import Data.Default (Default(..))
-import System.IO (isEOF, hFlush, hPutStrLn, stderr, stdout)
+import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LazyKCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
                   betaRed, forceProg, isPdMature, clearPd)
@@ -36,14 +36,14 @@ betaRedInput ioInf d expr = do
     case ret of
         RedProg d' _ expr'
             | isPdMature 1 ioInf d' -> do
-                putStr "."
-                hFlush stdout
+                hPutStr stderr "."
+                hFlush stderr
                 (red, ioInf'') <- betaRedInput ioInf (clearPd 1 d') expr'
                 return (forceProg red, ioInf'')
         RedStop d' _ _
             | isPdMature 1 ioInf d' -> do
-                putStr "."
-                hFlush stdout
+                hPutStr stderr "."
+                hFlush stderr
                 betaRedInput ioInf (clearPd 1 d') expr
         RedProg pd ix expr'
             | ix < 0 && not (isPdMature 1 ioInf pd) -> do
@@ -65,18 +65,18 @@ betaRedInput ioInf d expr = do
                 betaRedInput ioInf' pd expr    -- 元のexprを使用。
 
 pollInput :: Int -> IoInfo -> IO IoInfo
-pollInput ix (IoInfo _ input pd) = do
-    IoInfo eof' add _ <- getNchar [] $ ix - length input + 1
+pollInput ix (IoInfo _ input _ pd) = do
+    IoInfo eof' add _ _ <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
-    return $ IoInfo eof' (input ++ add) pd
+    return $ IoInfo eof' (input ++ add) False pd
 
 getNchar :: [Int] -> Int -> IO IoInfo
 getNchar acc n
-    | n <= 0 = return $ IoInfo False acc def
+    | n <= 0 = return $ IoInfo False acc False def
     | otherwise = do
         eof <- isEOF
-        if eof then return $ IoInfo True acc def
+        if eof then return $ IoInfo True acc False def
               else do
                   c <- getChar
                   getNchar (acc ++ [ord c]) (n - 1)
@@ -104,8 +104,15 @@ countF (V 1) = Just 0
 countF (App _ (V 2) e) = (+1) <$> countF e
 countF _ = Nothing
 
+onlyV :: IoInfo -> IO () -> IO ()
+onlyV ioInf act = if optV ioInf
+    then do
+        act
+        hFlush stderr
+    else return ()
+
 deconsLoop :: ProgDot -> Maybe Int -> IoInfo -> LamExpr -> IO ()
-deconsLoop pd (Just 0)  ioInf expr = return ()
+deconsLoop _  (Just 0)  _     _    = return ()
 deconsLoop pd countdown ioInf expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
     (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
@@ -113,10 +120,12 @@ deconsLoop pd countdown ioInf expr = do
     case num of
         Just n
             | n < 256 -> do
-                hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
+                onlyV ioInf'' $
+                    hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
                 putChar $ chr n
                 hFlush stdout
                 deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
             | otherwise -> do
-                hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
+                onlyV ioInf'' $
+                    hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
         _ -> hPutStrLn stderr $ "car is not number"
