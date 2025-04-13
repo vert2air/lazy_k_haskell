@@ -60,27 +60,30 @@ betaRedInput ioInf d expr = do
     let ret = betaRed ioInf d expr
     -- case betaRedPar expr of
     case ret of
-        RedProg d' _ expr'
-            | isPdMature 1 ioInf d' -> do
-                hPutStr stderr "."
-                hFlush stderr
-                (red, ioInf'') <- betaRedInput ioInf (clearPd 1 d') expr'
-                return (forceProg red, ioInf'')
-        RedStop d' _ _
-            | isPdMature 1 ioInf d' -> do
-                hPutStr stderr "."
-                hFlush stderr
-                betaRedInput ioInf (clearPd 1 d') expr
         RedProg pd ix expr'
-            | ix < 0 && not (isPdMature 1 ioInf pd) -> do
+            | isPdMature 1 ioInf pd -> do
+                -- 返ってきた理由は、beta簡約の回数が基準に達したからだった。
+                hPutStr stderr "."  -- 進捗dotの表示
+                hFlush stderr
+                -- 他の条件は、再帰の中でチェックする。
+                (red, ioInf'') <- betaRedInput ioInf (clearPd 1 pd) expr'
+                return (forceProg red, ioInf'')
+            | ix < 0 -> do
+                -- 遅延入力に当たらず、beta簡約が進んだ。
                 -- putStrLn "---------------> RedProg minus"
                 return (ret, ioInf)
             | otherwise -> do
+                -- beta簡約が進んだが、遅延入力で止まった。
                 -- putStrLn "---------------> RedProg Plus"
                 ioInf' <- pollInput ix ioInf
                 (red, ioInf'') <- betaRedInput ioInf' pd expr'
                 return (forceProg red, ioInf'')
         RedStop pd ix _
+            | isPdMature 1 ioInf pd -> do
+                -- 返ってきた理由は、beta簡約の回数が基準に達したからだった。
+                hPutStr stderr "."  -- 進捗dotの表示
+                hFlush stderr
+                betaRedInput ioInf (clearPd 1 pd) expr
             | ix < 0 -> do
                 -- putStrLn "---------------> RedStop minus"
                 return (RedStop pd ix expr, ioInf) -- 元のexprを使用。
