@@ -7,9 +7,34 @@ import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 import LazyKCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
                   betaRed, forceProg, isPdMature, clearPd)
 
-decons :: IoInfo
-        -> ProgDot
-        -> LamExpr
+-- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
+deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
+        -> IoInfo       -- ^ 入力情報と出力関係のオプション
+        -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
+        -> IO ()
+deconsLoop _  (Just 0)  _     _    = return ()
+deconsLoop pd countdown ioInf expr = do
+    (car, cdr, pd', ioInf') <- decons ioInf pd expr
+    (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
+    let num = getChNum car_lam
+    case num of
+        Just n
+            | n < 256 -> do
+                onlyV ioInf'' $
+                    hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
+                putChar $ chr n
+                hFlush stdout
+                deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
+            | otherwise -> do
+                onlyV ioInf'' $
+                    hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
+        _ -> hPutStrLn stderr $ "car is not number"
+
+-- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
+decons :: IoInfo     -- ^ 入力情報と出力関係のオプション
+        -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> LamExpr   -- ^ 分割すべき Scott encoding のリスト
         -> IO (LamExpr, LamExpr, ProgDot, IoInfo)
 decons ioInf d expr =
   case expr of
@@ -26,9 +51,10 @@ decons ioInf d expr =
                 -- cons の形でなく、beta簡約も進まないのなら、エラー。
                 | otherwise -> error $ "Invalid program: ret=" ++ show ret
 
-betaRedInput :: IoInfo
-            -> ProgDot
-            -> LamExpr
+-- | Beta簡約 (遅延入力対応)
+betaRedInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
+            -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+            -> LamExpr   -- ^ beta簡約対象のラムダ式
             -> IO (RedResult LamExpr, IoInfo)
 betaRedInput ioInf d expr = do
     let ret = betaRed ioInf d expr
@@ -64,6 +90,11 @@ betaRedInput ioInf d expr = do
                 ioInf' <- pollInput ix ioInf
                 betaRedInput ioInf' pd expr    -- 元のexprを使用。
 
+{- | 入力の ix番目までの文字を取得
+
+- 取得した文字を追加の IoInfo を返す。
+- ix番目まで入力されるまで、blocking。
+-}
 pollInput :: Int -> IoInfo -> IO IoInfo
 pollInput ix (IoInfo _ input _ pd) = do
     IoInfo eof' add _ _ <- getNchar [] $ ix - length input + 1
@@ -81,6 +112,7 @@ getNchar acc n
                   c <- getChar
                   getNchar (acc ++ [ord c]) (n - 1)
 
+-- | expr に可能な限りbeta簡約を再帰実行 (遅延入力対応)
 infinit :: IoInfo -> ProgDot -> LamExpr -> IO (LamExpr, ProgDot, IoInfo)
 infinit ioInf pd expr = do
     -- putStrLn $ "infinit : " ++ show ioInf ++ " : " ++ show expr ++ " <<<<<<"
@@ -95,37 +127,19 @@ infinit ioInf pd expr = do
             | ix < 0 -> return (expr, pd', ioInf')
             | otherwise -> infinit ioInf' pd' expr
 
+-- | 引数を Church encoding の自然数として幾らかを算出
 getChNum :: LamExpr -> Maybe Int
-getChNum (L _ (L _ e)) = countF e
+getChNum (L _ (L _ llexp)) = countF llexp
+  where
+    countF (V 1) = Just 0
+    countF (App _ (V 2) e) = (+1) <$> countF e
+    countF _ = Nothing
 getChNum _ = Nothing
 
-countF :: LamExpr -> Maybe Int
-countF (V 1) = Just 0
-countF (App _ (V 2) e) = (+1) <$> countF e
-countF _ = Nothing
-
+-- | -vオプション指定時のみactを実行し、最後にstderrをflush
 onlyV :: IoInfo -> IO () -> IO ()
 onlyV ioInf act = if optV ioInf
     then do
         act
         hFlush stderr
     else return ()
-
-deconsLoop :: ProgDot -> Maybe Int -> IoInfo -> LamExpr -> IO ()
-deconsLoop _  (Just 0)  _     _    = return ()
-deconsLoop pd countdown ioInf expr = do
-    (car, cdr, pd', ioInf') <- decons ioInf pd expr
-    (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
-    let num = getChNum car_lam
-    case num of
-        Just n
-            | n < 256 -> do
-                onlyV ioInf'' $
-                    hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
-                putChar $ chr n
-                hFlush stdout
-                deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
-            | otherwise -> do
-                onlyV ioInf'' $
-                    hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
-        _ -> hPutStrLn stderr $ "car is not number"

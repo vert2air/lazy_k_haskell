@@ -24,21 +24,15 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
         deriving (Eq)
 
-{- | Lazy K の標準入力の履歴と状態
-標準入力が End of File に達していれば、Bool が True。
-これまでの入力を [Int] に保持。
-標準入力で 256 を受けると EOF と見なされる。
-それ以降の入力は、256 が続く扱いになる。
-[Int] も 有効な入力以降に 256 が続くケースがありうる。
-標準入力は、0～255 の数値と、EOF の 256 を取りうるので、
-[Char] でなく [Int] にしている。
--}
+-- | Lazy Kプログラムの入力状態と、出力オプション
 data IoInfo = IoInfo
-    { inEof :: !Bool
-    , inHist :: ![Int]
-    , optV :: !Bool
-    , progDot :: ProgDot
-    } deriving (Show)
+    { inEof :: !Bool    -- ^ 標準入力が EOF に達したか。
+    , inHist :: ![Int]  -- ^ 受信済みの標準入力データ。
+                        -- EOF 到達後のインデックスを読み出した場合、
+                        -- 256 が補完される。
+    , optV :: !Bool      -- ^ 起動時に-vオプションが指定されているか。
+    , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
+    } deriving (Eq, Ord, Show)
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -46,10 +40,12 @@ lamSize (L s _)     = s
 lamSize (Jot s _)   = s
 lamSize _           = 1
 
+-- | 関数適用の演算子
 infixl 5 %:
 (%:) :: LamExpr -> LamExpr -> LamExpr
 a %: b = App (1 + lamSize a + lamSize b) a b
 
+-- | ラムダ抽象の演算子
 la :: LamExpr -> LamExpr
 la a = L (1 + lamSize a) a
 
@@ -72,8 +68,7 @@ instance Default NameManager where
         , nmUnlamStyle = False
         }
 
-{- | NameMamager の命名ポリシー
- -}
+-- | NameMamager の命名ポリシー
 data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表示。
                 | PK_single_use -- ^ 全てのラムダ抽象に、異なる名前を付ける。
                 | PK_level      -- ^ ラムダ抽象の深さに応じて、名前を付ける。
@@ -81,6 +76,7 @@ data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表
                                 -- Poolの消費が最小になるように名前を付ける。
     deriving (Eq, Ord, Show)
 
+-- | ラムダ式を表示する際に変数に名前を付けるための管理データ
 data NameManager = NameManager
     { nmPolicy :: PolicyKind -- ^ Policy for name management
     , nmPool  :: String  -- ^ 払い出す名前のプール。
@@ -93,8 +89,9 @@ data NameManager = NameManager
     } deriving (Show)
 
 {- | ラムダ抽象への名前の付与
- - ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
- - 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
+
+ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
+付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
  -}
 enterLambda :: NameManager -> LamExpr -> (String, NameManager)
 enterLambda mng@NameManager{nmPolicy = PK_index} _ = (" ", mng)
@@ -122,10 +119,9 @@ leaveLambda :: NameManager -> NameManager
 leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
 leaveLambda     NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
 
-{- | 自由変数の一覧取得 (入力プロミスを含む)
- -}
+-- | 自由変数の一覧取得 (入力プロミスを含む)
 getFreeVars :: LamExpr  -- ^ 取得対象のラムダ式
-        -> Int
+        -> Int          -- ^ ラムダ抽象の深さ。ラムダ抽象が無ければ 0。
         -> (S.Set String, S.Set Int)
 getFreeVars (V v) dep
     | v > dep = (S.empty, S.singleton (v - dep))
@@ -145,9 +141,10 @@ getFreeVars _       _ = (S.empty, S.empty)
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
 
+-- | ラムダ式を文字列化した結果の情報
 data Stringifying = Stringifying String StyleInfoKind NameManager
 
--- Input : Any LamExpr
+-- | ラムダ式を文字列化
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
   where
@@ -215,7 +212,10 @@ digLamAbst mng e@(L _ lexp) = case newName of
     mng_ret = leaveLambda mng_new
 digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 
-readLazyK :: String -> String -> Either String LamExpr
+-- | Lazy Kソースを含めたラムダ式の文字列の読み込み
+readLazyK :: String -- ^ 読み込むソースのタイトル
+        -> String   -- ^ 読み込むソースの内容
+        -> Either String LamExpr
 readLazyK title input = case parse exprs title . trimComment $ input of
     Left err  -> Left $ show err
     Right val -> Right val
