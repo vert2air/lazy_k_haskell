@@ -93,26 +93,27 @@ betaRedInput ioInf d expr = do
                 ioInf' <- pollInput ix ioInf
                 betaRedInput ioInf' pd expr    -- 元のexprを使用。
 
-{- | 入力の ix番目までの文字を取得
-
-- 取得した文字を追加の IoInfo を返す。
-- ix番目まで入力されるまで、blocking。
--}
-pollInput :: Int -> IoInfo -> IO IoInfo
+-- | 標準入力から指定番目まで取得 (blocking処理)
+pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
+        -> IoInfo    -- ^ 入力情報と出力関係のオプション
+        -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
 pollInput ix (IoInfo _ input _ pd) = do
     IoInfo eof' add _ _ <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
     return $ IoInfo eof' (input ++ add) False pd
 
-getNchar :: [Int] -> Int -> IO IoInfo
+-- | pollInput の補助関数。指定byte数を取得する。
+getNchar :: [Int]     -- ^ pollInputでここまでに受信したbyte列。
+        -> Int        -- ^ 取得すべき残りのbyte数。
+        -> IO IoInfo
 getNchar acc n
     | n <= 0 = return $ IoInfo False acc False def
     | otherwise = do
         eof <- isEOF
         if eof then return $ IoInfo True acc False def
               else do
-                  c <- getChar
+                  c <- getChar  -- 実際の読込み。それまではblocking。
                   getNchar (acc ++ [ord c]) (n - 1)
 
 -- | expr に可能な限りbeta簡約を再帰実行 (遅延入力対応)
@@ -130,8 +131,9 @@ infinit ioInf pd expr = do
             | ix < 0 -> return (expr, pd', ioInf')
             | otherwise -> infinit ioInf' pd' expr
 
--- | 引数を Church encoding の自然数として幾らかを算出
-getChNum :: LamExpr -> Maybe Int
+-- | 引数にbeta簡約済みの Church encoding の自然数を受取り、値を返す。
+getChNum :: LamExpr  -- ^ beta簡約済みの Church encoding の自然数。
+        -> Maybe Int -- ^ ラムダ式が表す自然数。想定外は全て Nothing。
 getChNum (L _ (L _ llexp)) = countF llexp
   where
     countF (V 1) = Just 0
