@@ -74,17 +74,6 @@ instance Show LamExpr where
     show e = ret
       where Stringifying ret _ _ = toNamedString def e
 
-instance Default NameManager where
-    def = NameManager {
-          nmPolicy = PK_minimum
-        , nmPool = ['x','y','z']
-                    ++ ['a'..'h'] ++ ['j'] ++ ['l'..'r'] ++ ['t'..'w']
-                ++ ['X','Y','Z']
-                    ++ ['A'..'H'] ++ ['J'] ++ ['L'..'R'] ++ ['T'..'W']
-        , nmStack = ""
-        , nmUnlamStyle = False
-        }
-
 -- | NameMamager の命名ポリシー
 data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表示。
                 | PK_single_use -- ^ 全てのラムダ抽象に、異なる名前を付ける。
@@ -109,6 +98,17 @@ data NameManager = NameManager
                          -- 空白は、名前を与えず、de Bruijn index で表示することを示す。
     , nmUnlamStyle :: Bool -- ^ 真なら、S, K, I を Unlambdaスタイルで表示する。
     } deriving (Show)
+
+instance Default NameManager where
+    def = NameManager {
+          nmPolicy = PK_minimum
+        , nmPool = ['x','y','z']
+                    ++ ['a'..'h'] ++ ['j'] ++ ['l'..'r'] ++ ['t'..'w']
+                ++ ['X','Y','Z']
+                    ++ ['A'..'H'] ++ ['J'] ++ ['L'..'R'] ++ ['T'..'W']
+        , nmStack = ""
+        , nmUnlamStyle = False
+        }
 
 instance Arbitrary NameManager where
     arbitrary = NameManager <$> arbitrary
