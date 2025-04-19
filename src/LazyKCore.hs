@@ -9,7 +9,7 @@ import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
-import Test.QuickCheck (Arbitrary(..), oneof, listOf, shuffle)
+import Test.QuickCheck (Arbitrary(..), oneof, listOf1, shuffle)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces)
 
@@ -27,7 +27,7 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 
 instance Arbitrary LamExpr where
     arbitrary = oneof [
-          V . (+0) . abs <$> arbitrary
+          V . (+1) . abs <$> arbitrary
         , la <$> arbitrary
         , (%:) <$> arbitrary <*> arbitrary
         , (Nm <$>) . oneof $
@@ -36,7 +36,7 @@ instance Arbitrary LamExpr where
             ++ [pure "iota"]
 
         , do
-            jotexp <- listOf . oneof . map pure $ "00"
+            jotexp <- listOf1 . oneof . map pure $ "01"
             return $ Jot (length jotexp) jotexp
         , In . abs <$> arbitrary
         ]
