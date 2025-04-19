@@ -55,4 +55,5 @@ test-suite lazy-k-haskell-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.21.0.0,
+        QuickCheck ^>=2.15.0.1,
         lazy-k-haskell
