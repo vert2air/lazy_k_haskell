@@ -1,6 +1,6 @@
 module Main (main) where
 
-import QuickCheckTest (qc_main)
+import QuickCheckTests (qc_main)
 
 main :: IO ()
 main = do

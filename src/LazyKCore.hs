@@ -9,6 +9,7 @@ import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
+import Test.QuickCheck (Arbitrary(..), oneof, listOf, shuffle)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces)
 
@@ -23,6 +24,22 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
             | Jot !Int String   -- ^ Jot式。"0" "1" からなる文字列。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
         deriving (Eq)
+
+instance Arbitrary LamExpr where
+    arbitrary = oneof [
+          V . (+0) . abs <$> arbitrary
+        , la <$> arbitrary
+        , (%:) <$> arbitrary <*> arbitrary
+        , (Nm <$>) . oneof $
+            [ pure [ch] | ch <- "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
+                                ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ]
+            ++ [pure "iota"]
+
+        , do
+            jotexp <- listOf . oneof . map pure $ "00"
+            return $ Jot (length jotexp) jotexp
+        , In . abs <$> arbitrary
+        ]
 
 -- | Lazy Kプログラムの入力状態と、出力オプション
 data IoInfo = IoInfo
@@ -76,6 +93,11 @@ data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表
                                 -- Poolの消費が最小になるように名前を付ける。
     deriving (Eq, Ord, Show)
 
+instance Arbitrary PolicyKind where
+    arbitrary = oneof $ map return [
+          PK_index, PK_single_use, PK_level, PK_minimum
+        ]
+
 -- | ラムダ式を表示する際に変数に名前を付けるための管理データ
 data NameManager = NameManager
     { nmPolicy :: PolicyKind -- ^ Policy for name management
@@ -87,6 +109,13 @@ data NameManager = NameManager
                          -- 空白は、名前を与えず、de Bruijn index で表示することを示す。
     , nmUnlamStyle :: Bool -- ^ 真なら、S, K, I を Unlambdaスタイルで表示する。
     } deriving (Show)
+
+instance Arbitrary NameManager where
+    arbitrary = NameManager <$> arbitrary
+        <*> shuffle ("abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
+                ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ_")
+        <*> pure ""
+        <*> arbitrary
 
 {- | ラムダ抽象への名前の付与
 
