@@ -28,14 +28,13 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 instance Arbitrary LamExpr where
     arbitrary = oneof [
           V . (+1) . abs <$> arbitrary
-        , la <$> arbitrary
         , do
-            fun <- arbitrary
-            oprd <- arbitrary
-            case (fun, oprd) of
-                (Nm "iota", Nm "I") -> arbitrary
-                (Nm "I", Nm "iota") -> arbitrary
-                _                   -> return $ fun %: oprd
+            lexp <- arbitrary
+            case lexp of
+                -- '*' が無いと Iotaスタイルは表現できない。やり直す。
+                Nm "iota" -> la <$> arbitrary
+                _         -> return $ la lexp
+        , (%:) <$> arbitrary <*> arbitrary
         , (Nm <$>) . oneof $
             [ pure [ch] | ch <- "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
                                 ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ]
@@ -208,9 +207,11 @@ toNamedString mng e@(L _ _) = Stringifying ('\\':str_ret) style_ret mng_ret
   where
     Stringifying str_ret style_ret mng_ret = digLamAbst mng e
 toNamedString mng (App _ (Nm "I") (Nm "iota"))
-                                        = Stringifying "(i)(iota)" SK_Error mng
+                                        -- "(I)(iota)" は、これなら表現できる。
+                                        = Stringifying "*Ii" SK_General mng
 toNamedString mng (App _ (Nm "iota") (Nm "I"))
-                                        = Stringifying "(iota)(i)" SK_Error mng
+                                        -- "(iota)(I)" は、これなら表現できる。
+                                        = Stringifying "*iI" SK_General mng
 toNamedString mng (App _ fun oprd) =
     Stringifying (concat [appOp, par_fun, pad, par_oprd]) newStyle mng_oprd
   where
