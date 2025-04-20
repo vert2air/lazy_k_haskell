@@ -133,14 +133,19 @@ enterLambda mng@NameManager{nmPolicy = PK_index} _
         = (" ", mng{nmStack = ' ' : nmStack mng}) -- leaveLambda用に空白追加。
 enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = ""} _
         = (" ", mng{nmStack = ' ' : nmStack mng})
-enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car : cdr} _
+enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car' : cdr} _
         = ([car], mng{nmStack = car : nmStack mng, nmPool = cdr})
+    where car = case car' of
+            '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
+            _   -> car'
 enterLambda mng@NameManager{nmPolicy = PK_level} _
     | length (nmStack mng) < length (nmPool mng)
         = ([next_ch], mng{nmStack = next_ch : nmStack mng})
     | otherwise
         = (" ", mng{nmStack = ' ' : nmStack mng})
-  where next_ch = nmPool mng !! length (nmStack mng)
+  where next_ch = case nmPool mng !! length (nmStack mng) of
+            '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
+            ch  -> ch
 enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
         = ([newName], mng{nmStack = newName : nmStack mng})
   where
@@ -152,7 +157,12 @@ enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
         foldStep set ix
             | ix < length (nmStack mng) = S.insert [nmStack mng !! ix] set
             | otherwise                 = set
-    newName = (!!0) . filter (\nm -> S.notMember [nm] allname) $ nmPool mng
+    -- 他のpolicyと同じように、' ' と '_'を使うことを許容するが、
+    -- PK_minimum では、pool順に変数が使われるとは限らない。
+    -- poolの設定に従って de Bruijn index を使うユースケースが
+    -- 重要とは思えないので、機能は実装しない。単に無視する。
+    newName = (!!0) . filter (\nm -> nm `notElem` "_ "
+                                    && S.notMember [nm] allname) $ nmPool mng
 
 leaveLambda :: NameManager -> NameManager
 leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
