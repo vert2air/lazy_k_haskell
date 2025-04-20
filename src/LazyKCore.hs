@@ -129,7 +129,8 @@ instance Arbitrary NameManager where
 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
  -}
 enterLambda :: NameManager -> LamExpr -> (String, NameManager)
-enterLambda mng@NameManager{nmPolicy = PK_index} _ = (" ", mng)
+enterLambda mng@NameManager{nmPolicy = PK_index} _
+        = (" ", mng{nmStack = ' ' : nmStack mng}) -- leaveLambda用に空白追加。
 enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = ""} _
         = (" ", mng{nmStack = ' ' : nmStack mng})
 enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car : cdr} _
@@ -186,6 +187,7 @@ toNamedString mng (V v) = Stringifying name SK_General mng
     name = case v <= length (nmStack mng) of
             True
                 | (nmStack mng !! (v - 1)) /= ' ' -> [nmStack mng !! (v - 1)]
+            -- De Bruijn index は先頭に'_'を付ける。
             _                                     -> '_' : show v
 toNamedString mng e@(L _ _) = Stringifying ('\\':str_ret) style_ret mng_ret
   where
