@@ -214,6 +214,9 @@ toNamedString mng (App _ fun oprd) =
     par_oprd = case (oprd, style_oprd) of
         (L _ _, _)              -> "(" ++ str_oprd ++ ")"
         (App _ _ _, SK_General) -> "(" ++ str_oprd ++ ")"
+        (Jot _ _, _) -> case lastLeaf fun of
+                            Jot _ _ -> "(" ++ str_oprd ++ ")"
+                            _       -> str_oprd
         _                       -> str_oprd
     pad = if isDigit (par_fun !! (length par_fun - 1))
             && isDigit (par_oprd !! 0)
@@ -227,6 +230,11 @@ toNamedString mng (Nm nm)
 toNamedString mng (Jot _ j) = Stringifying j SK_General mng
 toNamedString mng (In ix)
                     = Stringifying ("In(" ++ show ix ++ ")") SK_General mng
+
+lastLeaf :: LamExpr -> LamExpr
+lastLeaf (App _ _ oprd) = lastLeaf oprd
+lastLeaf (L _ lexp) = lastLeaf lexp
+lastLeaf e = e
 
 -- | 連続するラムダ抽象を考慮した文字列化
 digLamAbst :: NameManager -> LamExpr -> Stringifying
