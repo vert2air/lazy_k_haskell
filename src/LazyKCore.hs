@@ -29,7 +29,13 @@ instance Arbitrary LamExpr where
     arbitrary = oneof [
           V . (+1) . abs <$> arbitrary
         , la <$> arbitrary
-        , (%:) <$> arbitrary <*> arbitrary
+        , do
+            fun <- arbitrary
+            oprd <- arbitrary
+            case (fun, oprd) of
+                (Nm "iota", Nm "I") -> arbitrary
+                (Nm "I", Nm "iota") -> arbitrary
+                _                   -> return $ fun %: oprd
         , (Nm <$>) . oneof $
             [ pure [ch] | ch <- "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
                                 ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ]
