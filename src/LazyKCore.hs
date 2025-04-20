@@ -148,7 +148,10 @@ enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
     -- 1 はbindされている。1を検出できるよう 0 を渡す。
     (names, idxes) = getFreeVars expr 0
     allname = foldl foldStep names . S.toList $ idxes
-      where foldStep set ix = S.insert [nmStack mng !! (ix - 1)] set
+      where
+        foldStep set ix
+            | ix < length (nmStack mng) = S.insert [nmStack mng !! ix] set
+            | otherwise                 = set
     newName = (!!0) . filter (\nm -> S.notMember [nm] allname) $ nmPool mng
 
 leaveLambda :: NameManager -> NameManager
@@ -176,9 +179,11 @@ getFreeVars (In ix) _ = (S.singleton $ "In(" ++ show ix ++ ")", S.empty)
 getFreeVars _       _ = (S.empty, S.empty)
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
+                    deriving (Eq, Show)
 
 -- | ラムダ式を文字列化した結果の情報
 data Stringifying = Stringifying String StyleInfoKind NameManager
+                    deriving (Show)
 
 -- | ラムダ式を文字列化
 toNamedString :: NameManager -> LamExpr -> Stringifying
