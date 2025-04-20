@@ -11,7 +11,7 @@ import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
 import Test.QuickCheck (Arbitrary(..), oneof, listOf1, shuffle)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
-                              parse, spaces)
+                              parse, spaces, try)
 
 -- | ラムダ式
 data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
@@ -331,7 +331,7 @@ absts = fmap concat $ many1 abst
 
 abst = char '\\' *> spaces *> abst'
 
-abst' = ( (map (\a -> [a])) <$>
+abst' = try ( (map (\a -> [a])) <$>
         (many1 (oneOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                        ++ "abcdefghijklmnopqrstuvwxyz") <* spaces)
         <* char '.' <* spaces ))
