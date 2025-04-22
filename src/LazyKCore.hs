@@ -263,7 +263,7 @@ enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
     allname = trace (show ("getFreeVars", expr, names, idxes)) $ foldl foldStep names . S.toList $ idxes
       where
         foldStep set ix
-            | ix - 1 < length (nmStack mng) = trace ("S.insert : ix=" ++ show ix ++ "," ++ show [nmStack mng !! (ix - 1)]) $ S.insert [nmStack mng !! (ix - 1)] set
+            | ix <= length (nmStack mng) = trace ("S.insert : ix=" ++ show ix ++ "," ++ show [nmStack mng !! (ix - 1)]) $ S.insert [nmStack mng !! (ix - 1)] set
             | otherwise                 = set
     -- 他のpolicyと同じように、' ' と '_'を使うことを許容するが、
     -- PK_minimum では、pool順に変数が使われるとは限らない。
