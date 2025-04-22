@@ -2,7 +2,7 @@
 
 module LazyKCore where
 
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 import           Data.Default (Default(..))
 import           Data.Char (isDigit, isSpace, toUpper, toLower)
 import           Data.List (elemIndex)
@@ -12,6 +12,9 @@ import qualified Data.Set as S (Set, empty, insert,
 import Test.QuickCheck (Arbitrary(..), oneof, listOf1, shuffle)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
+
+trace :: String -> a -> a
+trace _ x = x
 
 -- | ラムダ式
 data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
@@ -23,7 +26,7 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
                                 --   大文字小文字を区別し自由変数。
             | Jot !Int String   -- ^ Jot式。"0" "1" からなる文字列。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
-        deriving (Eq)
+        deriving (Eq, Show)
 
 instance Arbitrary LamExpr where
     arbitrary = oneof [
@@ -43,7 +46,7 @@ instance Arbitrary LamExpr where
         , do
             jotexp <- listOf1 . oneof . map pure $ "01"
             return $ Jot (length jotexp) jotexp
-        , In . abs <$> arbitrary
+        -- , In . abs <$> arbitrary
         ]
 
 -- | Lazy Kプログラムの入力状態と、出力オプション
@@ -74,10 +77,10 @@ la a = L (1 + lamSize a) a
 
 {-
  - Show Functions
- -}
 instance Show LamExpr where
     show e = ret
       where Stringifying ret _ _ = toNamedString def e
+ -}
 
 -- | NameMamager の命名ポリシー
 data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表示。
@@ -118,74 +121,9 @@ instance Default NameManager where
 instance Arbitrary NameManager where
     arbitrary = NameManager <$> arbitrary
         <*> shuffle ("abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
-                ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ_")
+                ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ_")
         <*> pure ""
         <*> arbitrary
-
-{- | ラムダ抽象への名前の付与
-
-ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
-付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
- -}
-enterLambda :: NameManager -> LamExpr -> (String, NameManager)
-enterLambda mng@NameManager{nmPolicy = PK_index} _
-        = (" ", mng{nmStack = ' ' : nmStack mng}) -- leaveLambda用に空白追加。
-enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = ""} _
-        = (" ", mng{nmStack = ' ' : nmStack mng})
-enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car' : cdr} _
-        = ([car], mng{nmStack = car : nmStack mng, nmPool = cdr})
-    where car = case car' of
-            '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
-            _   -> car'
-enterLambda mng@NameManager{nmPolicy = PK_level} _
-    | length (nmStack mng) < length (nmPool mng)
-        = ([next_ch], mng{nmStack = next_ch : nmStack mng})
-    | otherwise
-        = (" ", mng{nmStack = ' ' : nmStack mng})
-  where next_ch = case nmPool mng !! length (nmStack mng) of
-            '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
-            ch  -> ch
-enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
-        = ([newName], mng{nmStack = newName : nmStack mng})
-  where
-    -- digLamAbstから呼出され、ラムダ抽象の本体が渡ってくるので、
-    -- 1 はbindされている。1を検出できるよう 0 を渡す。
-    (names, idxes) = getFreeVars expr 0
-    allname = foldl foldStep names . S.toList $ idxes
-      where
-        foldStep set ix
-            | ix < length (nmStack mng) = S.insert [nmStack mng !! ix] set
-            | otherwise                 = set
-    -- 他のpolicyと同じように、' ' と '_'を使うことを許容するが、
-    -- PK_minimum では、pool順に変数が使われるとは限らない。
-    -- poolの設定に従って de Bruijn index を使うユースケースが
-    -- 重要とは思えないので、機能は実装しない。単に無視する。
-    newName = (!!0) . filter (\nm -> nm `notElem` "_ "
-                                    && S.notMember [nm] allname) $ nmPool mng
-
-leaveLambda :: NameManager -> NameManager
-leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
-leaveLambda     NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
-
--- | 自由変数の一覧取得 (入力プロミスを含む)
-getFreeVars :: LamExpr  -- ^ 取得対象のラムダ式
-        -> Int          -- ^ ラムダ抽象の深さ。ラムダ抽象が無ければ 0。
-        -> (S.Set String, S.Set Int)
-getFreeVars (V v) dep
-    | v > dep = (S.empty, S.singleton (v - dep))
-    | otherwise = (S.empty, S.empty)
-getFreeVars (L _ lexp) dep = getFreeVars lexp (dep + 1)
-getFreeVars (App _ fun oprd) dep
-    = (f_name `S.union` o_name, f_idx `S.union` o_idx)
-  where
-    (f_name, f_idx) = getFreeVars fun (dep)
-    (o_name, o_idx) = getFreeVars oprd (dep)
-getFreeVars (Nm name) _
-    | (name !! 0) `elem` "iksIKS" = (S.empty, S.empty)
-    | otherwise                   = (S.singleton [name !! 0], S.empty)
--- 入力プロミスは、自由変数として取得できるようにしておく。
-getFreeVars (In ix) _ = (S.singleton $ "In(" ++ show ix ++ ")", S.empty)
-getFreeVars _       _ = (S.empty, S.empty)
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
                     deriving (Eq, Show)
@@ -194,7 +132,16 @@ data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
 data Stringifying = Stringifying String StyleInfoKind NameManager
                     deriving (Show)
 
+-- | docstring用
+takeStringified :: Stringifying -> String
+takeStringified (Stringifying str _ _) = str
+
 -- | ラムダ式を文字列化
+--
+-- >>> takeStringified $ toNamedString def $ la . la $ V 2
+-- "\\xy.x"
+-- >>> takeStringified $ toNamedString def $ la . la $ V 1
+-- "\\xx.x"
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
   where
@@ -253,27 +200,128 @@ lastLeaf (L _ lexp) = lastLeaf lexp
 lastLeaf e = e
 
 -- | 連続するラムダ抽象を考慮した文字列化
-digLamAbst :: NameManager -> LamExpr -> Stringifying
-digLamAbst mng e@(L _ lexp@(L _ _)) = case (newName, ret) of
+digLamAbst :: NameManager
+        -> LamExpr
+        -> Stringifying  -- ^ 文字列は、ラムダ抽象でbindされる名前。
+                         -- λ xyz.XXX なら、"xyz"。indexの逆順。
+-- >>> takeStringified $ digLamAbst def $ la . la $ V 2
+-- "xy.x"
+-- >>> takeStringified $ digLamAbst (NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False}) $ la $ V 2
+-- "y.x"
+-- >>> takeStringified $ digLamAbst def $ la . la $ V 1
+-- "xx.x"
+digLamAbst mng e@(L _ lexp@(L _ _)) = trace ("L L : " ++ show newName) $ case (newName, ret) of
     (' ':_, _    ) -> Stringifying (' ':'\\':ret) SK_General mng_ret
     (n:_  , ' ':_) -> Stringifying (n:'.':' ':'\\':ret) SK_General mng_ret
-    (n:_  , _    ) -> Stringifying (n:ret) SK_General mng_ret
+    (n:_  , _    ) -> trace ("HERE L L: " ++ show e ++ " --> n:ret = " ++ show n ++ ":" ++ ret) $ Stringifying (n:ret) SK_General mng_ret
     ("", _    ) -> error $ "Internal Error : enterLambda cannot assign name"
   where
-    (newName, mng_ent) = enterLambda mng e
-    Stringifying ret _ mng_new = digLamAbst mng_ent lexp
+    (newName, mng_ent) = trace (show mng) $ enterLambda mng e
+    Stringifying ret _ mng_new = trace (show (newName, mng_ent)) $ digLamAbst mng_ent lexp
     mng_ret = leaveLambda mng_new
-digLamAbst mng e@(L _ lexp) = case newName of
+digLamAbst mng e@(L _ lexp) = trace ("L : " ++ show newName) $ case newName of
     ' ':_ -> Stringifying (' ':ret) SK_General mng_ret
-    n:_   -> Stringifying (n:'.':ret) SK_General mng_ret
+    n:_   -> trace ("HERE L: " ++ show e ++ " --> n:ret = " ++ show n ++ ":" ++ ret ++ " / " ++ show (nmStack mng)) $ Stringifying (n:'.':ret) SK_General mng_ret
     ""    -> error $ "Internal Error : enterLambda cannot assign name"
   where
     (newName, mng_ent) = enterLambda mng e
-    Stringifying ret _ mng_new = toNamedString mng_ent lexp
+    Stringifying ret _ mng_new = trace (show (newName, mng_ent)) $ toNamedString mng_ent lexp
     mng_ret = leaveLambda mng_new
 digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 
+-- | ラムダ抽象への名前の付与
+--
+-- ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
+-- 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
+-- 
+-- >>> enterLambda def $ la . la $ V 2
+-- ("x",NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False})
+enterLambda :: NameManager -> LamExpr -> (String, NameManager)
+enterLambda mng@NameManager{nmPolicy = PK_index} _
+        = (" ", mng{nmStack = ' ' : nmStack mng}) -- leaveLambda用に空白追加。
+enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = ""} _
+        = (" ", mng{nmStack = ' ' : nmStack mng})
+enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car' : cdr} _
+        = ([car], mng{nmStack = car : nmStack mng, nmPool = cdr})
+    where car = case car' of
+            '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
+            _   -> car'
+enterLambda mng@NameManager{nmPolicy = PK_level} _
+    | length (nmStack mng) < length (nmPool mng)
+        = ([next_ch], mng{nmStack = next_ch : nmStack mng})
+    | otherwise
+        = (" ", mng{nmStack = ' ' : nmStack mng})
+  where next_ch = case nmPool mng !! length (nmStack mng) of
+            '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
+            ch  -> ch
+enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
+        = trace ("enterLambda(" ++ show mng ++ ", " ++ show expr ++ ") allname = " ++ show allname) $ ([newName], mng{nmStack = newName : nmStack mng})
+  where
+    -- digLamAbstから呼出され、ラムダ抽象のLが渡される。
+    -- 1 が新たにbindすべき変数。1を検出できるよう 0 を渡す。
+    (names, idxes) = getFreeVars expr 0
+    allname = trace (show ("getFreeVars", expr, names, idxes)) $ foldl foldStep names . S.toList $ idxes
+      where
+        foldStep set ix
+            | ix - 1 < length (nmStack mng) = trace ("S.insert : ix=" ++ show ix ++ "," ++ show [nmStack mng !! (ix - 1)]) $ S.insert [nmStack mng !! (ix - 1)] set
+            | otherwise                 = set
+    -- 他のpolicyと同じように、' ' と '_'を使うことを許容するが、
+    -- PK_minimum では、pool順に変数が使われるとは限らない。
+    -- poolの設定に従って de Bruijn index を使うユースケースが
+    -- 重要とは思えないので、機能は実装しない。単に無視する。
+    newName = (!!0) . filter (\nm -> nm `notElem` "_ "
+                                    && S.notMember [nm] allname) $ nmPool mng
+
+leaveLambda :: NameManager -> NameManager
+leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
+leaveLambda     NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
+
+-- | 自由変数の一覧取得 (入力プロミスを含む)
+-- 指定のラムダ抽象の深さより大きいde Bruijn indexの変数と
+-- 全ての名前付き変数をpickup。
+-- getFreeVars expr 0 として使うことで、expr の中の自由変数を取り出せる。
+--
+-- >>> getFreeVars (V 1) 0
+-- (fromList [],fromList [1])
+-- >>> getFreeVars (la $ V 1) 0   -- la中のV 1は束縛されているので対象外。
+-- (fromList [],fromList [])
+-- >>> getFreeVars (la $ V 1 %: V 3) 0 -- V 3は自由変数。Lの外ではV 2に該当。
+-- (fromList [],fromList [2])
+-- >>> getFreeVars (Nm "y" %: la (Nm "x")) 0  -- 名前付き変数は全て自由変数。
+-- (fromList ["x","y"],fromList [])
+-- >>> getFreeVars (Nm "iota" %: Nm "S") 0  -- Lazy Kの変数は対象外とする。
+-- (fromList [],fromList [])
+-- >>> getFreeVars (In 8) 0            -- 入力プロミスも取り出すことにする。
+-- (fromList ["In(8)"],fromList [])
+getFreeVars :: LamExpr  -- ^ 取得対象のラムダ式
+        -> Int          -- ^ ラムダ抽象の深さ。ラムダ抽象が無ければ 0。
+        -> (S.Set String, S.Set Int)
+getFreeVars (V v) dep
+    | v > dep = (S.empty, S.singleton (v - dep))
+    | otherwise = (S.empty, S.empty)
+getFreeVars (L _ lexp) dep = getFreeVars lexp (dep + 1)
+getFreeVars (App _ fun oprd) dep
+    = (f_name `S.union` o_name, f_idx `S.union` o_idx)
+  where
+    (f_name, f_idx) = getFreeVars fun (dep)
+    (o_name, o_idx) = getFreeVars oprd (dep)
+getFreeVars (Nm name) _
+    | (name !! 0) `elem` "iksIKS" = (S.empty, S.empty)
+    | otherwise                   = (S.singleton [name !! 0], S.empty)
+-- 入力プロミスは、自由変数として取得できるようにしておく。
+getFreeVars (In ix) _ = (S.singleton $ "In(" ++ show ix ++ ")", S.empty)
+getFreeVars _       _ = (S.empty, S.empty)
+
 -- | Lazy Kソースを含めたラムダ式の文字列の読み込み
+--
+-- >>> readLazyK "dummy title" "\\ n" -- 無名ラムダと名前付き変数の組合せ
+-- Right (L 2 (Nm "n"))
+-- >>> readLazyK "dummy title" "\\xy.x"
+-- Right (L 3 (L 2 (V 2)))
+-- >>> readLazyK "dummy title" "\\xy.y"
+-- Right (L 3 (L 2 (V 1)))
+-- >>> readLazyK "dummy title" "\\xx.x"  -- シャドーイングされるケース
+-- Right (L 3 (L 2 (V 1)))
 readLazyK :: String -- ^ 読み込むソースのタイトル
         -> String   -- ^ 読み込むソースの内容
         -> Either String LamExpr
@@ -511,15 +559,21 @@ buildInput (IoInfo eof input _ _) ix
 makeChuchNum :: Int -> LamExpr
 makeChuchNum ix = la . la . applyN ix (V 2 %:) $ V 1
 
--- |
--- Substitute the variable to the Lambda expression
+-- | 指定した de Bruijn index の変数を指定した式に置換
 --
--- >>> subst 1 (V 3) (V 1 %: V 2)
--- App 3 (V 3) (V 2)
--- >>> subst 1 (V 3) (V 1 %: la (v 2))
--- App 4 (V 3) (la (v 3))
+-- subst 1 e expr は、(λ expr)(e) を計算する。
+-- つまり、expr の中の V 1 を e に置換する。
+-- ラムダ抽象が消費されるので、expr 中の自由変数の index は -1 される。
+-- expr の中で導入された変数は、影響を受けない。
+-- expr の内容が変化する場合にのみ、Just で計算後の式を返す。
+-- 変化しない場合は Nothing を返す。
+--
+-- >>> subst 1 (V 3) (V 1 %: V 2)    -- (λ _1_2)_3
+-- Just (App 3 (V 3) (V 1))
+-- >>> subst 1 (V 3) (V 1 %: la (V 2))
+-- Just (App 4 (V 3) (L 2 (V 4)))
 -- >>> subst 2 (V 3) (V 1 %: V 5 %: V 2)
--- App 5 (App 3 (V 1) (V 4)) (V 3)
+-- Just (App 5 (App 3 (V 1) (V 4)) (V 3))
 subst :: Int            -- ^ De Bruijn index of variable to be replaced
     -> LamExpr          -- ^ expression by which the variable is replaced
     -> LamExpr          -- ^ whole expression
