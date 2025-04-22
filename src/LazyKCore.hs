@@ -241,36 +241,47 @@ enterLambda mng@NameManager{nmPolicy = PK_index} _
         = (" ", mng{nmStack = ' ' : nmStack mng}) -- leaveLambda用に空白追加。
 enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = ""} _
         = (" ", mng{nmStack = ' ' : nmStack mng})
-enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car' : cdr} _
-        = ([car], mng{nmStack = car : nmStack mng, nmPool = cdr})
-    where car = case car' of
+enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car' : cdr} expr
+    -- Poolの次候補が使用中の名前と被っていたらその名前は捨てて、再帰。
+    | [car] `elem` usingNames mng expr = enterLambda mng{nmPool = cdr} expr
+    | otherwise = ([car], mng{nmStack = car : nmStack mng, nmPool = cdr})
+  where car = case car' of
             '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
             _   -> car'
-enterLambda mng@NameManager{nmPolicy = PK_level} _
+enterLambda mng@NameManager{nmPolicy = PK_level} expr
+    -- PK_level なら、他のパスではnext_chを使えるかもしれないが、
+    -- そこまで厳密に判定するメリットは思いつかないので、破棄して再帰。
+    | [next_ch] `elem` usingNames mng expr = enterLambda mng{nmPool = rem} expr
     | length (nmStack mng) < length (nmPool mng)
         = ([next_ch], mng{nmStack = next_ch : nmStack mng})
     | otherwise
         = (" ", mng{nmStack = ' ' : nmStack mng})
-  where next_ch = case nmPool mng !! length (nmStack mng) of
+  where
+    next_ch = case nmPool mng !! length (nmStack mng) of
             '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
             ch  -> ch
+    rem = take (length (nmStack mng)) (nmPool mng) ++
+          drop (length (nmStack mng) + 1) (nmPool mng)
 enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
         = trace ("enterLambda(" ++ show mng ++ ", " ++ show expr ++ ") allname = " ++ show allname) $ ([newName], mng{nmStack = newName : nmStack mng})
   where
-    -- digLamAbstから呼出され、ラムダ抽象のLが渡される。
-    -- 1 が新たにbindすべき変数。1を検出できるよう 0 を渡す。
-    (names, idxes) = getFreeVars expr 0
-    allname = trace (show ("getFreeVars", expr, names, idxes)) $ foldl foldStep names . S.toList $ idxes
-      where
-        foldStep set ix
-            | ix <= length (nmStack mng) = trace ("S.insert : ix=" ++ show ix ++ "," ++ show [nmStack mng !! (ix - 1)]) $ S.insert [nmStack mng !! (ix - 1)] set
-            | otherwise                 = set
+    allname = usingNames mng expr
     -- 他のpolicyと同じように、' ' と '_'を使うことを許容するが、
     -- PK_minimum では、pool順に変数が使われるとは限らない。
     -- poolの設定に従って de Bruijn index を使うユースケースが
     -- 重要とは思えないので、機能は実装しない。単に無視する。
     newName = (!!0) . filter (\nm -> nm `notElem` "_ "
                                     && S.notMember [nm] allname) $ nmPool mng
+
+usingNames :: NameManager -> LamExpr -> S.Set String
+usingNames mng expr = foldl foldStep names . S.toList $ idxes
+  where
+    foldStep set ix
+        | ix <= length (nmStack mng) = S.insert [nmStack mng !! (ix - 1)] set
+        | otherwise                 = set
+    -- digLamAbstから呼出され、ラムダ抽象のLが渡される。
+    -- 1 が新たにbindすべき変数。1を検出できるよう 0 を渡す。
+    (names, idxes) = getFreeVars expr 0
 
 leaveLambda :: NameManager -> NameManager
 leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
