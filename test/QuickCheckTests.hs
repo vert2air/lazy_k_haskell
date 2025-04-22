@@ -10,6 +10,8 @@ qc_main = do
     quickCheck prop_toNamedString_readLazyK
 
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Bool
+-- Iota のみは、Lazy Kの仕様上表記出来ない。除外する。
+prop_toNamedString_readLazyK _ (Nm "iota") = True
 prop_toNamedString_readLazyK mng e = case toNamedString mng e of
     Stringifying e' _ _ -> case readLazyK "DummyTitle" e' of
         Right e'' -> e == e''
