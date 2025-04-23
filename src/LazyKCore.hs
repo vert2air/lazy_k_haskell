@@ -137,11 +137,17 @@ takeStringified :: Stringifying -> String
 takeStringified (Stringifying str _ _) = str
 
 -- | ラムダ式を文字列化
+-- De Bruijn index の変数は、'_'を付けて表示する。
+-- 入力プロミスは、'<'を付けて表示する。
 --
 -- >>> takeStringified $ toNamedString def $ la . la $ V 2
 -- "\\xy.x"
 -- >>> takeStringified $ toNamedString def $ la . la $ V 1
 -- "\\xx.x"
+-- >>> takeStringified $ toNamedString def $ (Jot 1 "0" %: Nm "q") %: Nm "iota"
+-- "*(0q)i"
+-- >>> takeStringified $ toNamedString def $ la $ V 1 %: In 0 -- 入力プロミス
+-- "\\x.x<0"
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
   where
@@ -150,6 +156,7 @@ toNamedString mng (V v) = Stringifying name SK_General mng
                 | (nmStack mng !! (v - 1)) /= ' ' -> [nmStack mng !! (v - 1)]
             -- De Bruijn index は先頭に'_'を付ける。
             _                                     -> '_' : show v
+toNamedString mng (In ix) = Stringifying ("<" ++ show ix) SK_General mng
 toNamedString mng e@(L _ _) = Stringifying ('\\':str_ret) style_ret mng_ret
   where
     Stringifying str_ret style_ret mng_ret = digLamAbst mng e
@@ -171,8 +178,9 @@ toNamedString mng (App _ fun oprd) =
         (_,  SK_IotaUnlam, Nm "iota", _) -> ("*", SK_IotaUnlam)
         (_,  _,            Nm "iota", _) -> ("*", SK_General)
         _ -> (if nmUnlamStyle mng then "`" else "", SK_General)
-    par_fun = case fun of
-        L _ _ -> "(" ++ str_fun ++ ")"
+    par_fun = case (fun, style_fun, appOp) of
+        (L _ _, _, _) -> "(" ++ str_fun ++ ")"
+        (App _ _ _, SK_General, "*") -> "(" ++ str_fun ++ ")"
         _     -> str_fun
     par_oprd = case (oprd, style_oprd) of
         (L _ _, _)              -> "(" ++ str_oprd ++ ")"
@@ -191,8 +199,6 @@ toNamedString mng (Nm nm)
         else         Stringifying nm SK_General mng
     | otherwise    = Stringifying nm SK_General mng
 toNamedString mng (Jot _ j) = Stringifying j SK_General mng
-toNamedString mng (In ix)
-                    = Stringifying ("In(" ++ show ix ++ ")") SK_General mng
 
 lastLeaf :: LamExpr -> LamExpr
 lastLeaf (App _ _ oprd) = lastLeaf oprd
@@ -281,7 +287,7 @@ usingNames mng expr = foldl foldStep names . S.toList $ idxes
         | otherwise                 = set
     -- digLamAbstから呼出され、ラムダ抽象のLが渡される。
     -- 1 が新たにbindすべき変数。1を検出できるよう 0 を渡す。
-    (names, idxes) = getFreeVars expr 0
+    (names, idxes, _) = getFreeVars expr 0
 
 leaveLambda :: NameManager -> NameManager
 leaveLambda mng@NameManager{nmStack = (_ : cdr)} = mng{nmStack = cdr}
@@ -293,37 +299,39 @@ leaveLambda     NameManager{nmStack = _} = error "leaveLambda: empty nmStack"
 -- getFreeVars expr 0 として使うことで、expr の中の自由変数を取り出せる。
 --
 -- >>> getFreeVars (V 1) 0
--- (fromList [],fromList [1])
+-- (fromList [],fromList [1],fromList [])
 -- >>> getFreeVars (la $ V 1) 0   -- la中のV 1は束縛されているので対象外。
--- (fromList [],fromList [])
+-- (fromList [],fromList [],fromList [])
 -- >>> getFreeVars (la $ V 1 %: V 3) 0 -- V 3は自由変数。Lの外ではV 2に該当。
--- (fromList [],fromList [2])
+-- (fromList [],fromList [2],fromList [])
 -- >>> getFreeVars (Nm "y" %: la (Nm "x")) 0  -- 名前付き変数は全て自由変数。
--- (fromList ["x","y"],fromList [])
+-- (fromList ["x","y"],fromList [],fromList [])
 -- >>> getFreeVars (Nm "iota" %: Nm "S") 0  -- Lazy Kの変数は対象外とする。
--- (fromList [],fromList [])
+-- (fromList [],fromList [],fromList [])
 -- >>> getFreeVars (In 8) 0            -- 入力プロミスも取り出すことにする。
--- (fromList ["In(8)"],fromList [])
+-- (fromList [],fromList [],fromList [8])
 getFreeVars :: LamExpr  -- ^ 取得対象のラムダ式
         -> Int          -- ^ ラムダ抽象の深さ。ラムダ抽象が無ければ 0。
-        -> (S.Set String, S.Set Int)
+        -> (S.Set String, S.Set Int, S.Set Int)
 getFreeVars (V v) dep
-    | v > dep = (S.empty, S.singleton (v - dep))
-    | otherwise = (S.empty, S.empty)
+    | v > dep = (S.empty, S.singleton (v - dep), S.empty)
+    | otherwise = (S.empty, S.empty, S.empty)
 getFreeVars (L _ lexp) dep = getFreeVars lexp (dep + 1)
 getFreeVars (App _ fun oprd) dep
-    = (f_name `S.union` o_name, f_idx `S.union` o_idx)
+    = (f_name `S.union` o_name, f_idx `S.union` o_idx, f_in `S.union` o_in)
   where
-    (f_name, f_idx) = getFreeVars fun (dep)
-    (o_name, o_idx) = getFreeVars oprd (dep)
+    (f_name, f_idx, f_in) = getFreeVars fun (dep)
+    (o_name, o_idx, o_in) = getFreeVars oprd (dep)
 getFreeVars (Nm name) _
-    | (name !! 0) `elem` "iksIKS" = (S.empty, S.empty)
-    | otherwise                   = (S.singleton [name !! 0], S.empty)
+    | (name !! 0) `elem` "iksIKS" = (S.empty, S.empty, S.empty)
+    | otherwise                   = (S.singleton [name !! 0], S.empty, S.empty)
 -- 入力プロミスは、自由変数として取得できるようにしておく。
-getFreeVars (In ix) _ = (S.singleton $ "In(" ++ show ix ++ ")", S.empty)
-getFreeVars _       _ = (S.empty, S.empty)
+getFreeVars (In ix) _ = (S.empty, S.empty, S.singleton ix)
+getFreeVars _       _ = (S.empty, S.empty, S.empty)
 
 -- | Lazy Kソースを含めたラムダ式の文字列の読み込み
+-- De Bruijn index の変数は、'_'+数字 (1以上) で表示されている。
+-- 入力プロミスは、'<'+数字 (0以上) で表示されている。
 --
 -- >>> readLazyK "dummy title" "\\ n" -- 無名ラムダと名前付き変数の組合せ
 -- Right (L 2 (Nm "n"))
@@ -380,6 +388,7 @@ expr' = Nm . (:[]) . toUpper <$> oneOf ("IKSiks") <* spaces
     <|> Nm . (:[]) <$> oneOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                            ++ "abcdefghijklmnopqrstuvwxyz") <* spaces
     <|> V . read <$> (char '_' *> many1 digit) <* spaces
+    <|> In . read <$> (char '<' *> many1 digit) <* spaces
     <|> char '`' *> spaces *> return (%:) <*> unlamExpr <*> unlamExpr
     <|> char '*' *> spaces *> return (%:) <*> iotaExpr <*> iotaExpr
     <|> (\s -> Jot (length s) s) . filter (not . isSpace) <$>
