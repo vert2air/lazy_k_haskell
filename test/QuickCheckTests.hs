@@ -1,13 +1,14 @@
 module QuickCheckTests where
 
-import Test.QuickCheck (quickCheck)
+import Test.QuickCheck (Result(..), quickCheckResult)
 
 import LazyKCore (LamExpr(..), NameManager(..), Stringifying(..)
                 , toNamedString, readLazyK)
 
-qc_main :: IO ()
+qc_main :: IO [Result]
 qc_main = do
-    quickCheck prop_toNamedString_readLazyK
+    res <- quickCheckResult prop_toNamedString_readLazyK
+    return [res]
 
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Bool
 -- Iota のみは、Lazy Kの仕様上表記出来ない。除外する。
