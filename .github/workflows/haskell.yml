@@ -42,4 +42,4 @@ jobs:
     - name: Run tests
       run: cabal test all
     - name: Run doctests
-      run: cabal repl --with-compiler=doctest
+      run: doctest src/
