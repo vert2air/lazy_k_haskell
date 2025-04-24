@@ -45,4 +45,5 @@ jobs:
     - name: Run tests
       run: cabal test all
     - name: Run doctests
-      run: doctest src/
+      run: cabal install doctest --ignore-project --overwrite-policy=always && cabal build && cabal repl --build-depends=QuickCheck --build-depends=template-haskell --with-compiler=doctest --repl-options='-w -Wdefault'
+
