@@ -2,7 +2,7 @@ name: Haskell CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature_test" ]
   pull_request:
     branches: [ "main" ]
 
@@ -41,3 +41,5 @@ jobs:
       run: cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
       run: cabal test all
+    - name: Run doctests
+      run: cabal repl --with-compiler=doctest
