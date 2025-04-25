@@ -206,16 +206,17 @@ lastLeaf (L _ lexp) = lastLeaf lexp
 lastLeaf e = e
 
 -- | 連続するラムダ抽象を考慮した文字列化
-digLamAbst :: NameManager
-        -> LamExpr
-        -> Stringifying  -- ^ 文字列は、ラムダ抽象でbindされる名前。
-                         -- λ xyz.XXX なら、"xyz"。indexの逆順。
+--
 -- >>> takeStringified $ digLamAbst def $ la . la $ V 2
 -- "xy.x"
 -- >>> takeStringified $ digLamAbst (NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False}) $ la $ V 2
 -- "y.x"
 -- >>> takeStringified $ digLamAbst def $ la . la $ V 1
 -- "xx.x"
+digLamAbst :: NameManager
+        -> LamExpr
+        -> Stringifying  -- ^ 文字列は、ラムダ抽象でbindされる名前。
+                         -- λ xyz.XXX なら、"xyz"。indexの逆順。
 digLamAbst mng e@(L _ lexp@(L _ _)) = trace ("L L : " ++ show newName) $ case (newName, ret) of
     (' ':_, _    ) -> Stringifying (' ':'\\':ret) SK_General mng_ret
     (n:_  , ' ':_) -> Stringifying (n:'.':' ':'\\':ret) SK_General mng_ret
