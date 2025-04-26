@@ -5,12 +5,12 @@ import Test.HUnit (Counts(..))
 import System.Exit (exitSuccess, exitFailure)
 
 import QuickCheckTests (qc_main)
-import ChurchNumberTests (chTestAll)
+import ChurchNumberTests (hUnitAll)
 
 main :: IO ()
 main = do
     res <- qc_main
-    cnt@(Counts _cases _tried errs fails) <- chTestAll
+    cnt@(Counts _cases _tried errs fails) <- hUnitAll
     putStrLn $ show $ cnt
     if all isSuccess res && errs == 0 && fails == 0
         then exitSuccess
