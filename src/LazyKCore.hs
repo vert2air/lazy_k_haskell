@@ -59,6 +59,9 @@ data IoInfo = IoInfo
     , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
     } deriving (Eq, Ord, Show)
 
+instance Default IoInfo where
+    def = IoInfo False [] False def
+
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
 lamSize (L s _)     = s
@@ -132,7 +135,7 @@ data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
 data Stringifying = Stringifying String StyleInfoKind NameManager
                     deriving (Show)
 
--- | docstring用
+-- | docstring用に、toNamedString から手早く LamExpr を取り出す。
 takeStringified :: Stringifying -> String
 takeStringified (Stringifying str _ _) = str
 
@@ -575,6 +578,12 @@ buildInput (IoInfo eof input _ _) ix
     compInput
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
+
+-- | 変化しなくなるまで、beta還元を繰り返す。
+betaRedInf :: LamExpr -> LamExpr
+betaRedInf e = case betaRed def def e of
+    RedProg _ _ red -> betaRedInf red
+    RedStop _ _ red -> red
 
 -- | Church encodingで、ix を表現するラムダ式を生成
 makeChuchNum :: Int -> LamExpr
