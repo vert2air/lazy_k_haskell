@@ -1,10 +1,8 @@
 module ChurchNumberTests where
 
-import Debug.Trace (trace)
 import Test.HUnit
-import Data.Default (Default(..))
 
-import LazyKCore (LamExpr(..), RedResult(..), betaRed, betaRedInf, toLambda, readLazyK)
+import LazyKCore (betaRedInf, toLambda, readLazyK)
 import LazyKParts (shortChNum, getChNum)
 
 chTestAll :: IO Counts

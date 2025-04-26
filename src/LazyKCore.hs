@@ -261,7 +261,7 @@ enterLambda mng@NameManager{nmPolicy = PK_single_use, nmPool = car' : cdr} expr
 enterLambda mng@NameManager{nmPolicy = PK_level} expr
     -- PK_level なら、他のパスではnext_chを使えるかもしれないが、
     -- そこまで厳密に判定するメリットは思いつかないので、破棄して再帰。
-    | [next_ch] `elem` usingNames mng expr = enterLambda mng{nmPool = rem} expr
+    | [next_ch] `elem` usingNames mng expr = enterLambda mng{nmPool = rmn} expr
     | length (nmStack mng) < length (nmPool mng)
         = ([next_ch], mng{nmStack = next_ch : nmStack mng})
     | otherwise
@@ -270,7 +270,7 @@ enterLambda mng@NameManager{nmPolicy = PK_level} expr
     next_ch = case nmPool mng !! length (nmStack mng) of
             '_' -> ' '  -- 見易さの為、poolの設定に'_'を使うことを許容する。
             ch  -> ch
-    rem = take (length (nmStack mng)) (nmPool mng) ++
+    rmn = take (length (nmStack mng)) (nmPool mng) ++
           drop (length (nmStack mng) + 1) (nmPool mng)
 enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
         = ([newName], mng{nmStack = newName : nmStack mng})

@@ -10,8 +10,8 @@ import ChurchNumberTests (chTestAll)
 main :: IO ()
 main = do
     res <- qc_main
-    cnt@(Counts cases tried errors failures) <- chTestAll
+    cnt@(Counts _cases _tried errs fails) <- chTestAll
     putStrLn $ show $ cnt
-    if all isSuccess res && errors == 0 && failures == 0
+    if all isSuccess res && errs == 0 && fails == 0
         then exitSuccess
         else exitFailure
