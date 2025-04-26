@@ -5,7 +5,7 @@ import Test.HUnit (Counts(..))
 import System.Exit (exitSuccess, exitFailure)
 
 import QuickCheckTests (qc_main)
-import ChurchNumberTests (hUnitAll)
+import HUnitTests (hUnitAll)
 
 main :: IO ()
 main = do

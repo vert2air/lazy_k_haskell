@@ -1,4 +1,4 @@
-module ChurchNumberTests where
+module HUnitTests where
 
 import Test.HUnit
 
