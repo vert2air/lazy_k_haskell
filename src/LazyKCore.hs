@@ -2,7 +2,9 @@
 
 module LazyKCore where
 
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
+-- trace :: String -> a -> a
+-- trace _ x = x
 import           Data.Default (Default(..))
 import           Data.Char (isDigit, isSpace, toUpper, toLower)
 import           Data.List (elemIndex)
@@ -13,8 +15,6 @@ import Test.QuickCheck (Arbitrary(..), oneof, listOf1, shuffle)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
 
-trace :: String -> a -> a
-trace _ x = x
 
 -- | ラムダ式
 data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
@@ -220,22 +220,22 @@ digLamAbst :: NameManager
         -> LamExpr
         -> Stringifying  -- ^ 文字列は、ラムダ抽象でbindされる名前。
                          -- λ xyz.XXX なら、"xyz"。indexの逆順。
-digLamAbst mng e@(L _ lexp@(L _ _)) = trace ("L L : " ++ show newName) $ case (newName, ret) of
+digLamAbst mng e@(L _ lexp@(L _ _)) = case (newName, ret) of
     (' ':_, _    ) -> Stringifying (' ':'\\':ret) SK_General mng_ret
     (n:_  , ' ':_) -> Stringifying (n:'.':' ':'\\':ret) SK_General mng_ret
-    (n:_  , _    ) -> trace ("HERE L L: " ++ show e ++ " --> n:ret = " ++ show n ++ ":" ++ ret) $ Stringifying (n:ret) SK_General mng_ret
+    (n:_  , _    ) -> Stringifying (n:ret) SK_General mng_ret
     ("", _    ) -> error $ "Internal Error : enterLambda cannot assign name"
   where
-    (newName, mng_ent) = trace (show mng) $ enterLambda mng e
-    Stringifying ret _ mng_new = trace (show (newName, mng_ent)) $ digLamAbst mng_ent lexp
+    (newName, mng_ent) = enterLambda mng e
+    Stringifying ret _ mng_new = digLamAbst mng_ent lexp
     mng_ret = leaveLambda mng_new
-digLamAbst mng e@(L _ lexp) = trace ("L : " ++ show newName) $ case newName of
+digLamAbst mng e@(L _ lexp) = case newName of
     ' ':_ -> Stringifying (' ':ret) SK_General mng_ret
-    n:_   -> trace ("HERE L: " ++ show e ++ " --> n:ret = " ++ show n ++ ":" ++ ret ++ " / " ++ show (nmStack mng)) $ Stringifying (n:'.':ret) SK_General mng_ret
+    n:_   -> Stringifying (n:'.':ret) SK_General mng_ret
     ""    -> error $ "Internal Error : enterLambda cannot assign name"
   where
     (newName, mng_ent) = enterLambda mng e
-    Stringifying ret _ mng_new = trace (show (newName, mng_ent)) $ toNamedString mng_ent lexp
+    Stringifying ret _ mng_new = toNamedString mng_ent lexp
     mng_ret = leaveLambda mng_new
 digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 
@@ -273,7 +273,7 @@ enterLambda mng@NameManager{nmPolicy = PK_level} expr
     rem = take (length (nmStack mng)) (nmPool mng) ++
           drop (length (nmStack mng) + 1) (nmPool mng)
 enterLambda mng@NameManager{nmPolicy = PK_minimum} expr
-        = trace ("enterLambda(" ++ show mng ++ ", " ++ show expr ++ ") allname = " ++ show allname) $ ([newName], mng{nmStack = newName : nmStack mng})
+        = ([newName], mng{nmStack = newName : nmStack mng})
   where
     allname = usingNames mng expr
     -- 他のpolicyと同じように、' ' と '_'を使うことを許容するが、

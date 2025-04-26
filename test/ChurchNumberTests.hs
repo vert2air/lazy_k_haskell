@@ -22,4 +22,4 @@ chTest title n = TestCase(assertEqual title (Just n) (calc title n))
 calc :: String -> Int -> Maybe Int
 calc title n = case readLazyK title . (shortChNum!!) $ n of
             Right e -> getChNum . betaRedInf . toLambda $ e
-            e@_ -> trace ("Error readLazyK : " ++ show e) Nothing
+            _       -> Nothing
