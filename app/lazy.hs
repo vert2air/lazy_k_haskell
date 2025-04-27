@@ -3,7 +3,6 @@
 
 -- import Prelude hiding (readFile, putStrLn, getArgs)
 -- import System.IO.Encoding (readFile, putStrLn, getArgs)
-import Debug.Trace (trace)
 -- import Data.Char (ord)
 import Data.Default (Default(..))
 import Data.List.Split (splitOn)
