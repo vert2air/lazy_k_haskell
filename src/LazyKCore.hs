@@ -579,20 +579,20 @@ buildInput (IoInfo eof input _ _) ix
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
 
--- | 指定回数を上限に、変化しなくなるまで、beta還元を行う。
+-- | 指定回数を上限に、変化しなくなるまで、beta還元を行う。toLambdaを含む。
 betaRedLimit :: Int     -- ^ beta還元の上限回数
             -> LamExpr  -- ^ beta還元を行うラムダ式
             -> Maybe LamExpr  -- ^ beta還元の結果。
                         -- 以下のいずれかの場合、Nothing を返す。
                         -- - beta簡約の上限回数に達しても beta簡約の余地がある。
                         -- - 入力promiseに当たりbete還元が進まなくなった。
-betaRedLimit n e = betaRedLimitAux limitInf def e
+betaRedLimit n e = betaRedLimitAux limitInf def . toLambda $ e
   where
     limitInf = IoInfo False [] False (ProgDot [0, n])
 
 -- | betaRedLimit から呼ばれるのみ。
 betaRedLimitAux :: IoInfo -> ProgDot -> LamExpr -> Maybe LamExpr
-betaRedLimitAux limit pdot e = case betaRed limit pdot . toLambda $ e of
+betaRedLimitAux limit pdot e = case betaRed limit pdot e of
     RedProg pdot' inIx e'
         | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
         | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
