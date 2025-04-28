@@ -553,12 +553,12 @@ betaRed ioInf            d e@(App _ x y) = case betaRed ioInf d x of
         | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
         | otherwise  -> RedStop def i (x %:) <*> betaRed ioInf d' y
     -- x で進展があったものの、関数適用であることには変わりない。
-    -- しかし、x が (L _ _) なら、beta還元可能。
+    -- しかし、x が (L _ _) なら、beta簡約可能。
     RedProg d' _ e'@(L _ _) -> forceProg $ betaRed ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
 betaRed ioInf@(IoInfo eof input _ _) d e@(In ix)
-    -- 現時点で展開可能な入力がある。cons なので、beta還元は出来ない。
+    -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
     -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
@@ -567,7 +567,7 @@ betaRed _ d e            = incPds d $ return e     -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
-            -> Int      -- ^ beta還元に必要なinputのインデックス
+            -> Int      -- ^ beta簡約に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
 buildInput (IoInfo eof input _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
@@ -579,13 +579,13 @@ buildInput (IoInfo eof input _ _) ix
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
 
--- | 指定回数を上限に、変化しなくなるまで、beta還元を行う。toLambdaを含む。
-betaRedLimit :: Int     -- ^ beta還元の上限回数
-            -> LamExpr  -- ^ beta還元を行うラムダ式
-            -> Maybe LamExpr  -- ^ beta還元の結果。
+-- | 指定回数を上限に、変化しなくなるまで、beta簡約を行う。toLambdaを含む。
+betaRedLimit :: Int     -- ^ beta簡約の上限回数
+            -> LamExpr  -- ^ beta簡約を行うラムダ式
+            -> Maybe LamExpr  -- ^ beta簡約の結果。
                         -- 以下のいずれかの場合、Nothing を返す。
                         -- - beta簡約の上限回数に達しても beta簡約の余地がある。
-                        -- - 入力promiseに当たりbete還元が進まなくなった。
+                        -- - 入力promiseに当たりbete簡約が進まなくなった。
 betaRedLimit n e = betaRedLimitAux limitInf def . toLambda $ e
   where
     limitInf = IoInfo False [] False (ProgDot [0, n])
@@ -602,7 +602,7 @@ betaRedLimitAux limit pdot e = case betaRed limit pdot e of
         | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
         | otherwise -> Just e'  -- betaReductionが止まった。
 
--- | 変化しなくなるまで、beta還元を繰り返す。
+-- | 変化しなくなるまで、beta簡約を繰り返す。
 betaRedInf :: LamExpr -> LamExpr
 betaRedInf e = case betaRed def def e of
     RedProg _ _ red -> betaRedInf red

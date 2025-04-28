@@ -139,7 +139,7 @@ getChNum (L _ (L _ llexp)) = countF llexp
     countF (V 1) = Just 0
     countF (App _ (V 2) e) = (+1) <$> countF e
     countF _ = Nothing
--- 1 = λfx.fx = λf.f (eta還元より) なので、個別に処理。
+-- 1 = λfx.fx = λf.f (eta変換より) なので、個別に処理。
 getChNum (L _ (V 1)) = Just 1
 getChNum _ = Nothing
 
