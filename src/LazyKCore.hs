@@ -522,9 +522,9 @@ instance Monad RedResult where
         RedStop dF j e' -> RedProg (dE + dF) (max i j) e'
         RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
 
-{- | Beta簡約の実行 (入力の遅延評価対応)
+{- | Beta/Eta簡約の実行 (入力の遅延評価対応)
 
- 入力が遅延評価される前提で、可能な範囲でbeta簡約を行う。
+ 入力が遅延評価される前提で、可能な範囲でbeta簡約およびeta簡約を行う。
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
  -}
@@ -532,6 +532,10 @@ betaRed :: IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
+-- eta簡約
+betaRed ioInf d (L _ (App _ fun (V 1))) =
+    forceProg $ betaRed ioInf d $ comple (shallow 1) fun
+-- 以降は、beta簡約
 betaRed ioInf d              (L _ le)    = la <$> betaRed ioInf d le
 betaRed ioInf d            e@(App _ (L _ _) _)
     | isPdMature 1 ioInf d = RedStop d (-1) e
