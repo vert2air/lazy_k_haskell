@@ -669,6 +669,10 @@ betaRedCC _      = Nothing
 -- |
 -- Abstraction Elimination
 --
+-- >>> abstElim (la $ Nm "t" %: V 1)  -- λx.tx eta簡約
+-- Just (Nm "t")
+-- >>> abstElim $ la . la $ (la $ V 2) %: V 1  -- λxy.(λz.y)y = λxy.y  K(SKI)
+-- Just (App 7 (Nm "K") (App 5 (App 3 (Nm "S") (Nm "K")) (Nm "I")))
 abstElim :: LamExpr
     -> Maybe LamExpr -- ^ if cannot more Elimination, this returns Nothing
 abstElim (Nm _)      = Nothing   -- Rule 1
