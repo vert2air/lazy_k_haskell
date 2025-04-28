@@ -16,29 +16,32 @@ qc_main = do
 
 -- | toNamedString の結果が readLazyK で元に戻ること。
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Property
-prop_toNamedString_readLazyK mng e =
-    e /= Nm "iota" ==> -- Iota のみは、Lazy Kの仕様上表記出来ない。除外する。
+-- Iota のみは、Lazy Kの仕様上表記出来ない。除外する。
+prop_toNamedString_readLazyK mng e = (e /= Nm "iota") ==>
     case toNamedString mng e of
         Stringifying e' _ _ -> case readLazyK "DummyTitle" e' of
             Right e'' -> e == e''
             Left _ -> False
 
+redLimit :: Int
+redLimit = 10000
+
 -- | beta簡約が止まるなら、2回目の簡約は同じ値になること。
 prop_beta_reduction :: LamExpr -> Property
-prop_beta_reduction expr =
-    (red_expr /= Nothing) ==> case betaRedLimit 50000 red_1st of
+prop_beta_reduction expr = (red_expr /= Nothing) ==>
+    case betaRedLimit redLimit red_1st of
         Nothing      -> False  -- 簡約2回目も成功する筈。でなければtest失敗。
         Just red_2nd -> red_1st == red_2nd  -- 2回簡約しても同じ値。試験成功。
   where
-    red_expr = betaRedLimit 50000 expr
+    red_expr = betaRedLimit redLimit expr
     red_1st = maybe (error "Internal Error @ prop_beta_reduction") id red_expr
 
 -- | beta簡約が止まるなら、抽象化除去を行った後に簡約しても値は同一であること。
 prop_abst_elim :: LamExpr -> Property
-prop_abst_elim expr =
-    (red_expr /= Nothing) ==> case betaRedLimit 50000 $ comple abstElim expr of
+prop_abst_elim expr = (red_expr /= Nothing) ==>
+    case betaRedLimit redLimit $ comple abstElim expr of
         Nothing      -> False -- 抽象化除去して簡約出来るなくなればtest失敗。
         Just red_2nd -> red_1st == red_2nd  -- 抽象化除去後も同じ値。試験成功。
   where
-    red_expr = betaRedLimit 50000 expr
+    red_expr = betaRedLimit redLimit expr
     red_1st = maybe (error "Internal Error @ prop_beta_reduction") id red_expr
