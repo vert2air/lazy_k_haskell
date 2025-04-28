@@ -11,7 +11,7 @@ import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
-import Test.QuickCheck (Arbitrary(..), oneof, listOf1, shuffle)
+import Test.QuickCheck (Arbitrary(..), Gen, oneof, listOf1, shuffle)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
 
@@ -30,7 +30,10 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 
 instance Arbitrary LamExpr where
     arbitrary = oneof [
-          V . (+1) . abs <$> arbitrary
+          -- De Bruijn index はラムダの深さなので、
+          -- 大き過ぎると自由変数ばかりになってしまう。
+          -- ラムダの深さは、対数スケールで増加する筈なので、log で圧縮する。
+          V . (+1) . floor . log . (+1) . abs <$> (arbitrary :: Gen Float)
         , do
             lexp <- arbitrary
             case lexp of
