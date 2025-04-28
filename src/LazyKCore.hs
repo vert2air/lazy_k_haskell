@@ -246,7 +246,7 @@ digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 --
 -- ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
 -- 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
--- 
+--
 -- >>> enterLambda def $ la . la $ V 2
 -- ("x",NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False})
 enterLambda :: NameManager -> LamExpr -> (String, NameManager)
@@ -414,13 +414,6 @@ abst' = try ( (map (\a -> [a])) <$>
     <|> return [""]
 
 {-
- - Transform functions
- -     to Lambda calcuration Expression
- -     beta Reduction
- -     Abstraction Elimination
- -}
-
-{-
  - Transform to Lambda calcuration Expression
  - Resolve any reference by names
  -}
@@ -453,7 +446,7 @@ jotToLam _ x   = error $ "Internal Error: jotToLam detect: " ++ [x]
  -     beta Reduction for CC expression
  -}
 
--- | Beta簡約の結果
+-- | Beta/Eta簡約の結果
 data RedResult e = RedStop ProgDot Int e
     -- ^ Intが負なら、簡約出来る箇所が無かった。
     --   Intが0以上なら、簡約出来る箇所を見付ける前に
@@ -528,49 +521,49 @@ instance Monad RedResult where
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
  -}
-betaRed :: IoInfo
+reduct :: IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
 -- eta簡約
-betaRed ioInf d (L _ (App _ fun (V 1))) =
-    forceProg $ betaRed ioInf d $ comple (shallow 1) fun
+reduct ioInf d (L _ (App _ fun (V 1))) =
+    forceProg $ reduct ioInf d $ comple (shallow 1) fun
 -- 以降は、beta簡約
-betaRed ioInf d              (L _ le)    = la <$> betaRed ioInf d le
-betaRed ioInf d            e@(App _ (L _ _) _)
+reduct ioInf d              (L _ le)    = la <$> reduct ioInf d le
+reduct ioInf d            e@(App _ (L _ _) _)
     | isPdMature 1 ioInf d = RedStop d (-1) e
-betaRed ioInf d              (App _ (L _ le) e) = case once of
+reduct ioInf d              (App _ (L _ le) e) = case once of
     -- beta簡約の結果が、再び関数適用だった。
     -- ここまで簡約出来る箇所が無かった結果ここで簡約を行ったので、
     -- 先頭から見直しても結局ここに戻ってくる。
-    -- それは無駄なので、ここから betaRed を継続する。
-    App _ _ _ -> incPd 1 . forceProg $ betaRed ioInf d once
+    -- それは無駄なので、ここから reduct を継続する。
+    App _ _ _ -> incPd 1 . forceProg $ reduct ioInf d once
     _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-betaRed ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
+reduct ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
-        forceProg $ betaRed ioInf d $ App s (buildInput ioInf ix) oprd 
-    -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
+        forceProg $ reduct ioInf d $ App s (buildInput ioInf ix) oprd
+    -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
     | otherwise = RedStop d ix e
-betaRed ioInf            d e@(App _ x y) = case betaRed ioInf d x of
+reduct ioInf            d e@(App _ x y) = case reduct ioInf d x of
     RedStop d' i _
         | isPdMature 1 ioInf d' -> RedStop d' i e
         | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
-        | otherwise  -> RedStop def i (x %:) <*> betaRed ioInf d' y
+        | otherwise  -> RedStop def i (x %:) <*> reduct ioInf d' y
     -- x で進展があったものの、関数適用であることには変わりない。
     -- しかし、x が (L _ _) なら、beta簡約可能。
-    RedProg d' _ e'@(L _ _) -> forceProg $ betaRed ioInf d' (e' %: y)
+    RedProg d' _ e'@(L _ _) -> forceProg $ reduct ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-betaRed ioInf@(IoInfo eof input _ _) d e@(In ix)
+reduct ioInf@(IoInfo eof input _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
-    -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
+    -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
     | otherwise = RedStop d ix e
-betaRed _ d e            = incPds d $ return e     -- V and Nm
+reduct _ d e            = incPds d $ return e     -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
@@ -586,33 +579,33 @@ buildInput (IoInfo eof input _ _) ix
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
 
--- | 指定回数を上限に、変化しなくなるまで、beta簡約を行う。toLambdaを含む。
-betaRedLimit :: Int     -- ^ beta簡約の上限回数
-            -> LamExpr  -- ^ beta簡約を行うラムダ式
-            -> Maybe LamExpr  -- ^ beta簡約の結果。
+-- | 指定回数を上限に、変化しなくなるまで、beta/eta簡約を行う。toLambdaを含む。
+reductLimit :: Int     -- ^ beta簡約の上限回数
+            -> LamExpr  -- ^ beta/eta簡約を行うラムダ式
+            -> Maybe LamExpr  -- ^ beta/eta簡約の結果。
                         -- 以下のいずれかの場合、Nothing を返す。
-                        -- - beta簡約の上限回数に達しても beta簡約の余地がある。
+                        -- - beta簡約の上限回数に達しても 簡約の余地がある。
                         -- - 入力promiseに当たりbete簡約が進まなくなった。
-betaRedLimit n e = betaRedLimitAux limitInf def . toLambda $ e
+reductLimit n e = reductLimitAux limitInf def . toLambda $ e
   where
     limitInf = IoInfo False [] False (ProgDot [0, n])
 
--- | betaRedLimit から呼ばれるのみ。
-betaRedLimitAux :: IoInfo -> ProgDot -> LamExpr -> Maybe LamExpr
-betaRedLimitAux limit pdot e = case betaRed limit pdot e of
+-- | reductLimit から呼ばれるのみ。
+reductLimitAux :: IoInfo -> ProgDot -> LamExpr -> Maybe LamExpr
+reductLimitAux limit pdot e = case reduct limit pdot e of
     RedProg pdot' inIx e'
         | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
         | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
-        | otherwise -> betaRedLimitAux limit pdot' e' -- 前進した。簡約化継続。
+        | otherwise -> reductLimitAux limit pdot' e' -- 前進した。簡約化継続。
     RedStop _pdot' inIx e'
         | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
         | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
-        | otherwise -> Just e'  -- betaReductionが止まった。
+        | otherwise -> Just e'  -- 簡約が止まった。
 
--- | 変化しなくなるまで、beta簡約を繰り返す。
-betaRedInf :: LamExpr -> LamExpr
-betaRedInf e = case betaRed def def e of
-    RedProg _ _ red -> betaRedInf red
+-- | 変化しなくなるまで、beta/eta簡約を繰り返す。
+reductInf :: LamExpr -> LamExpr
+reductInf e = case reduct def def e of
+    RedProg _ _ red -> reductInf red
     RedStop _ _ red -> red
 
 -- | Church encodingで、ix を表現するラムダ式を生成
@@ -642,7 +635,7 @@ subst vIdx e (V v)
     | v == vIdx = Just e
     | v >  vIdx = Just $ V (v - 1)
     | otherwise = Nothing
-subst vIdx e (L _ le)    = la <$> subst (vIdx + 1) (comple (deepen 1) e) le 
+subst vIdx e (L _ le)    = la <$> subst (vIdx + 1) (comple (deepen 1) e) le
 subst vIdx e (App _ m n) = mergeApp (subst vIdx e) m n
 subst _    _ (Nm _)      = Nothing
 subst _    _ (Jot _ _)   = Nothing

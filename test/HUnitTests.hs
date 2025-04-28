@@ -2,7 +2,7 @@ module HUnitTests where
 
 import Test.HUnit
 
-import LazyKCore (betaRedInf, toLambda, readLazyK)
+import LazyKCore (reductInf, toLambda, readLazyK)
 import LazyKParts (shortChNum, getChNum)
 
 hUnitAll :: IO Counts
@@ -19,5 +19,5 @@ churchNumberTest title n = TestCase(assertEqual title (Just n) (calc title n))
 
 calc :: String -> Int -> Maybe Int
 calc title n = case readLazyK title . (shortChNum!!) $ n of
-            Right e -> getChNum . betaRedInf . toLambda $ e
+            Right e -> getChNum . reductInf . toLambda $ e
             _       -> Nothing
