@@ -11,7 +11,8 @@ import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
-import Test.QuickCheck (Arbitrary(..), oneof, listOf1, shuffle)
+import Test.QuickCheck (Arbitrary(..), Gen, oneof, listOf1, shuffle,
+                        suchThat, vectorOf)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
 
@@ -30,7 +31,10 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
 
 instance Arbitrary LamExpr where
     arbitrary = oneof [
-          V . (+1) . abs <$> arbitrary
+          -- De Bruijn index はラムダの深さなので、
+          -- 大き過ぎると自由変数ばかりになってしまう。
+          -- ラムダの深さは、対数スケールで増加する筈なので、log で圧縮する。
+          V . (+1) . floor . log . (+1) . abs <$> (arbitrary :: Gen Float)
         , do
             lexp <- arbitrary
             case lexp of
@@ -39,9 +43,11 @@ instance Arbitrary LamExpr where
                 _         -> return $ la lexp
         , (%:) <$> arbitrary <*> arbitrary
         , (Nm <$>) . oneof $
-            [ pure [ch] | ch <- "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
-                                ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ]
-            ++ [pure "iota"]
+            -- SKI および、iota を多めに。
+            [ pure [ch] | ch <- "SKISKISKISKISKI" ++ "SKSKSKSKSK" ++ "SSSSS"
+                            ++ "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
+                            ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ" ]
+            ++ [pure "iota", pure "iota", pure "iota"]
 
         , do
             jotexp <- listOf1 . oneof . map pure $ "01"
@@ -61,6 +67,13 @@ data IoInfo = IoInfo
 
 instance Default IoInfo where
     def = IoInfo False [] False def
+
+instance Arbitrary IoInfo where
+    arbitrary = IoInfo
+        <$> arbitrary
+        <*> (map (`mod` 256) <$> arbitrary)
+        <*> arbitrary
+        <*> arbitrary
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -243,7 +256,7 @@ digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 --
 -- ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
 -- 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
--- 
+--
 -- >>> enterLambda def $ la . la $ V 2
 -- ("x",NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False})
 enterLambda :: NameManager -> LamExpr -> (String, NameManager)
@@ -411,13 +424,6 @@ abst' = try ( (map (\a -> [a])) <$>
     <|> return [""]
 
 {-
- - Transform functions
- -     to Lambda calcuration Expression
- -     beta Reduction
- -     Abstraction Elimination
- -}
-
-{-
  - Transform to Lambda calcuration Expression
  - Resolve any reference by names
  -}
@@ -450,7 +456,7 @@ jotToLam _ x   = error $ "Internal Error: jotToLam detect: " ++ [x]
  -     beta Reduction for CC expression
  -}
 
--- | Beta簡約の結果
+-- | Beta/Eta簡約の結果
 data RedResult e = RedStop ProgDot Int e
     -- ^ Intが負なら、簡約出来る箇所が無かった。
     --   Intが0以上なら、簡約出来る箇所を見付ける前に
@@ -469,6 +475,9 @@ data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
 
 instance Default ProgDot where
     def = ProgDot [0, 0]
+
+instance Arbitrary ProgDot where
+    arbitrary = ProgDot <$> vectorOf 2 (arbitrary `suchThat` (>= 0))
 
 instance Num ProgDot where
     (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
@@ -519,55 +528,60 @@ instance Monad RedResult where
         RedStop dF j e' -> RedProg (dE + dF) (max i j) e'
         RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
 
-{- | Beta簡約の実行 (入力の遅延評価対応)
+{- | Beta/Eta簡約の実行 (入力の遅延評価対応)
 
- 入力が遅延評価される前提で、可能な範囲でbeta簡約を行う。
+ 入力が遅延評価される前提で、可能な範囲でbeta簡約およびeta簡約を行う。
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
  -}
-betaRed :: IoInfo
+reduct :: IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
-betaRed ioInf d              (L _ le)    = la <$> betaRed ioInf d le
-betaRed ioInf d            e@(App _ (L _ _) _)
+-- eta簡約
+reduct ioInf d (L _ (App _ fun (V 1)))
+    | not (hasVar 1 fun) =
+        forceProg $ reduct ioInf d $ comple (shallow 1) fun
+-- 以降は、beta簡約
+reduct ioInf d              (L _ le)    = la <$> reduct ioInf d le
+reduct ioInf d            e@(App _ (L _ _) _)
     | isPdMature 1 ioInf d = RedStop d (-1) e
-betaRed ioInf d              (App _ (L _ le) e) = case once of
+reduct ioInf d              (App _ (L _ le) e) = case once of
     -- beta簡約の結果が、再び関数適用だった。
     -- ここまで簡約出来る箇所が無かった結果ここで簡約を行ったので、
     -- 先頭から見直しても結局ここに戻ってくる。
-    -- それは無駄なので、ここから betaRed を継続する。
-    App _ _ _ -> incPd 1 . forceProg $ betaRed ioInf d once
+    -- それは無駄なので、ここから reduct を継続する。
+    App _ _ _ -> incPd 1 . forceProg $ reduct ioInf d once
     _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-betaRed ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
+reduct ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
-        forceProg $ betaRed ioInf d $ App s (buildInput ioInf ix) oprd 
-    -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
+        forceProg $ reduct ioInf d $ App s (buildInput ioInf ix) oprd
+    -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
     | otherwise = RedStop d ix e
-betaRed ioInf            d e@(App _ x y) = case betaRed ioInf d x of
+reduct ioInf            d e@(App _ x y) = case reduct ioInf d x of
     RedStop d' i _
         | isPdMature 1 ioInf d' -> RedStop d' i e
         | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
-        | otherwise  -> RedStop def i (x %:) <*> betaRed ioInf d' y
+        | otherwise  -> RedStop def i (x %:) <*> reduct ioInf d' y
     -- x で進展があったものの、関数適用であることには変わりない。
-    -- しかし、x が (L _ _) なら、beta還元可能。
-    RedProg d' _ e'@(L _ _) -> forceProg $ betaRed ioInf d' (e' %: y)
+    -- しかし、x が (L _ _) なら、beta簡約可能。
+    RedProg d' _ e'@(L _ _) -> forceProg $ reduct ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-betaRed ioInf@(IoInfo eof input _ _) d e@(In ix)
-    -- 現時点で展開可能な入力がある。cons なので、beta還元は出来ない。
+reduct ioInf@(IoInfo eof input _ _) d e@(In ix)
+    -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
-    -- Inputプロミスは外部情報が必要なので、一旦 betaRed を止める。
+    -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
     | otherwise = RedStop d ix e
-betaRed _ d e            = incPds d $ return e     -- V and Nm
+reduct _ d e            = incPds d $ return e     -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
-            -> Int      -- ^ beta還元に必要なinputのインデックス
+            -> Int      -- ^ beta簡約に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
 buildInput (IoInfo eof input _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
@@ -579,10 +593,10 @@ buildInput (IoInfo eof input _ _) ix
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
 
--- | 変化しなくなるまで、beta還元を繰り返す。
-betaRedInf :: LamExpr -> LamExpr
-betaRedInf e = case betaRed def def e of
-    RedProg _ _ red -> betaRedInf red
+-- | 変化しなくなるまで、beta/eta簡約を繰り返す。
+reductInf :: LamExpr -> LamExpr
+reductInf e = case reduct def def e of
+    RedProg _ _ red -> reductInf red
     RedStop _ _ red -> red
 
 -- | Church encodingで、ix を表現するラムダ式を生成
@@ -612,7 +626,7 @@ subst vIdx e (V v)
     | v == vIdx = Just e
     | v >  vIdx = Just $ V (v - 1)
     | otherwise = Nothing
-subst vIdx e (L _ le)    = la <$> subst (vIdx + 1) (comple (deepen 1) e) le 
+subst vIdx e (L _ le)    = la <$> subst (vIdx + 1) (comple (deepen 1) e) le
 subst vIdx e (App _ m n) = mergeApp (subst vIdx e) m n
 subst _    _ (Nm _)      = Nothing
 subst _    _ (Jot _ _)   = Nothing
@@ -643,6 +657,10 @@ betaRedCC _      = Nothing
 -- |
 -- Abstraction Elimination
 --
+-- >>> abstElim (la $ Nm "t" %: V 1)  -- λx.tx eta簡約
+-- Just (Nm "t")
+-- >>> abstElim $ la . la $ (la $ V 2) %: V 1  -- λxy.(λz.y)y = λxy.y  K(SKI)
+-- Just (App 7 (Nm "K") (App 5 (App 3 (Nm "S") (Nm "K")) (Nm "I")))
 abstElim :: LamExpr
     -> Maybe LamExpr -- ^ if cannot more Elimination, this returns Nothing
 abstElim (Nm _)      = Nothing   -- Rule 1

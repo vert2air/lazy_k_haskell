@@ -5,7 +5,7 @@ import Data.Default (Default(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LazyKCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..),
-                  betaRed, forceProg, isPdMature, clearPd)
+                  reduct, forceProg, isPdMature, clearPd)
 
 -- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
 deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
@@ -40,7 +40,7 @@ decons ioInf d expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
     _ -> do
-        reded <- betaRedInput ioInf d expr
+        reded <- reductInput ioInf d expr
         case reded of
             (RedProg d' _ expr', ioInf') -> decons ioInf' d' expr'
             ret@(RedStop d' ix expr', ioInf')
@@ -51,14 +51,13 @@ decons ioInf d expr =
                 -- cons の形でなく、beta簡約も進まないのなら、エラー。
                 | otherwise -> error $ "Invalid program: ret=" ++ show ret
 
--- | Beta簡約 (遅延入力対応)
-betaRedInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
+-- | Beta/Eta簡約 (遅延入力対応)
+reductInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
             -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
-            -> LamExpr   -- ^ beta簡約対象のラムダ式
+            -> LamExpr   -- ^ 簡約対象のラムダ式
             -> IO (RedResult LamExpr, IoInfo)
-betaRedInput ioInf d expr = do
-    let ret = betaRed ioInf d expr
-    -- case betaRedPar expr of
+reductInput ioInf d expr = do
+    let ret = reduct ioInf d expr
     case ret of
         RedProg pd ix expr'
             | isPdMature 1 ioInf pd -> do
@@ -66,24 +65,24 @@ betaRedInput ioInf d expr = do
                 hPutStr stderr "."  -- 進捗dotの表示
                 hFlush stderr
                 -- 他の条件は、再帰の中でチェックする。
-                (red, ioInf'') <- betaRedInput ioInf (clearPd 1 pd) expr'
+                (red, ioInf'') <- reductInput ioInf (clearPd 1 pd) expr'
                 return (forceProg red, ioInf'')
             | ix < 0 -> do
-                -- 遅延入力に当たらず、beta簡約が進んだ。
+                -- 遅延入力に当たらず、簡約が進んだ。
                 -- putStrLn "---------------> RedProg minus"
                 return (ret, ioInf)
             | otherwise -> do
-                -- beta簡約が進んだが、遅延入力で止まった。
+                -- 簡約が進んだが、遅延入力で止まった。
                 -- putStrLn "---------------> RedProg Plus"
                 ioInf' <- pollInput ix ioInf
-                (red, ioInf'') <- betaRedInput ioInf' pd expr'
+                (red, ioInf'') <- reductInput ioInf' pd expr'
                 return (forceProg red, ioInf'')
         RedStop pd ix _
             | isPdMature 1 ioInf pd -> do
                 -- 返ってきた理由は、beta簡約の回数が基準に達したからだった。
                 hPutStr stderr "."  -- 進捗dotの表示
                 hFlush stderr
-                betaRedInput ioInf (clearPd 1 pd) expr
+                reductInput ioInf (clearPd 1 pd) expr
             | ix < 0 -> do
                 -- putStrLn "---------------> RedStop minus"
                 return (RedStop pd ix expr, ioInf) -- 元のexprを使用。
@@ -91,7 +90,7 @@ betaRedInput ioInf d expr = do
                 -- putStrLn "---------------> RedStop Plus"
                 -- putStrLn . show $ ret
                 ioInf' <- pollInput ix ioInf
-                betaRedInput ioInf' pd expr    -- 元のexprを使用。
+                reductInput ioInf' pd expr    -- 元のexprを使用。
 
 -- | 標準入力から指定番目まで取得 (blocking処理)
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
@@ -116,11 +115,11 @@ getNchar acc n
                   c <- getChar  -- 実際の読込み。それまではblocking。
                   getNchar (acc ++ [ord c]) (n - 1)
 
--- | expr に可能な限りbeta簡約を再帰実行 (遅延入力対応)
+-- | expr に可能な限りbeta/eta簡約を再帰実行 (遅延入力対応)
 infinit :: IoInfo -> ProgDot -> LamExpr -> IO (LamExpr, ProgDot, IoInfo)
 infinit ioInf pd expr = do
     -- putStrLn $ "infinit : " ++ show ioInf ++ " : " ++ show expr ++ " <<<<<<"
-    ret <- betaRedInput ioInf pd expr
+    ret <- reductInput ioInf pd expr
     case ret of
         (RedProg pd' _  expr', ioInf') -> do
             -- putStrLn ("Prog: " ++ show ret)
@@ -131,15 +130,15 @@ infinit ioInf pd expr = do
             | ix < 0 -> return (expr, pd', ioInf')
             | otherwise -> infinit ioInf' pd' expr
 
--- | 引数にbeta簡約済みの Church encoding の自然数を受取り、値を返す。
-getChNum :: LamExpr  -- ^ beta簡約済みの Church encoding の自然数。
+-- | 引数にbeta/eta簡約済みの Church encoding の自然数を受取り、値を返す。
+getChNum :: LamExpr  -- ^ 簡約済みの Church encoding の自然数。
         -> Maybe Int -- ^ ラムダ式が表す自然数。想定外は全て Nothing。
 getChNum (L _ (L _ llexp)) = countF llexp
   where
     countF (V 1) = Just 0
     countF (App _ (V 2) e) = (+1) <$> countF e
     countF _ = Nothing
--- 1 = λfx.fx = λf.f (eta還元より) なので、個別に処理。
+-- 1 = λfx.fx = λf.f (eta変換より) なので、個別に処理。
 getChNum (L _ (V 1)) = Just 1
 getChNum _ = Nothing
 
