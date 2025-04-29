@@ -526,8 +526,9 @@ reduct :: IoInfo
         -> LamExpr
         -> RedResult LamExpr
 -- eta簡約
-reduct ioInf d (L _ (App _ fun (V 1))) =
-    forceProg $ reduct ioInf d $ comple (shallow 1) fun
+reduct ioInf d (L _ (App _ fun (V 1)))
+    | not (hasVar 1 fun) =
+        forceProg $ reduct ioInf d $ comple (shallow 1) fun
 -- 以降は、beta簡約
 reduct ioInf d              (L _ le)    = la <$> reduct ioInf d le
 reduct ioInf d            e@(App _ (L _ _) _)
