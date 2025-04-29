@@ -11,7 +11,8 @@ import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
-import Test.QuickCheck (Arbitrary(..), Gen, oneof, listOf1, shuffle)
+import Test.QuickCheck (Arbitrary(..), Gen, oneof, listOf1, shuffle,
+                        suchThat, vectorOf)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
 
@@ -66,6 +67,13 @@ data IoInfo = IoInfo
 
 instance Default IoInfo where
     def = IoInfo False [] False def
+
+instance Arbitrary IoInfo where
+    arbitrary = IoInfo
+        <$> arbitrary
+        <*> (map (`mod` 256) <$> arbitrary)
+        <*> arbitrary
+        <*> arbitrary
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -468,6 +476,9 @@ data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
 instance Default ProgDot where
     def = ProgDot [0, 0]
 
+instance Arbitrary ProgDot where
+    arbitrary = ProgDot <$> vectorOf 2 (arbitrary `suchThat` (>= 0))
+
 instance Num ProgDot where
     (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
     (*) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (*) d1 d2)
@@ -581,29 +592,6 @@ buildInput (IoInfo eof input _ _) ix
     compInput
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
-
--- | 指定回数を上限に、変化しなくなるまで、beta/eta簡約を行う。toLambdaを含む。
-reductLimit :: Int     -- ^ beta簡約の上限回数
-            -> LamExpr  -- ^ beta/eta簡約を行うラムダ式
-            -> Maybe LamExpr  -- ^ beta/eta簡約の結果。
-                        -- 以下のいずれかの場合、Nothing を返す。
-                        -- - beta簡約の上限回数に達しても 簡約の余地がある。
-                        -- - 入力promiseに当たりbete簡約が進まなくなった。
-reductLimit n e = reductLimitAux limitInf def . toLambda $ e
-  where
-    limitInf = IoInfo False [] False (ProgDot [0, n])
-
--- | reductLimit から呼ばれるのみ。
-reductLimitAux :: IoInfo -> ProgDot -> LamExpr -> Maybe LamExpr
-reductLimitAux limit pdot e = case reduct limit pdot e of
-    RedProg pdot' inIx e'
-        | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
-        | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
-        | otherwise -> reductLimitAux limit pdot' e' -- 前進した。簡約化継続。
-    RedStop _pdot' inIx e'
-        | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
-        | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
-        | otherwise -> Just e'  -- 簡約が止まった。
 
 -- | 変化しなくなるまで、beta/eta簡約を繰り返す。
 reductInf :: LamExpr -> LamExpr
