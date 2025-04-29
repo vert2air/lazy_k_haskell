@@ -42,9 +42,11 @@ instance Arbitrary LamExpr where
                 _         -> return $ la lexp
         , (%:) <$> arbitrary <*> arbitrary
         , (Nm <$>) . oneof $
-            [ pure [ch] | ch <- "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
-                                ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ]
-            ++ [pure "iota"]
+            -- SKI および、iota を多めに。
+            [ pure [ch] | ch <- "SKISKISKISKISKI" ++ "SKSKSKSKSK" ++ "SSSSS"
+                            ++ "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
+                            ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ" ]
+            ++ [pure "iota", pure "iota", pure "iota"]
 
         , do
             jotexp <- listOf1 . oneof . map pure $ "01"
