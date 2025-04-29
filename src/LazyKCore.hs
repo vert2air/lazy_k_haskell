@@ -415,7 +415,8 @@ expr' = Nm . (:[]) . toUpper <$> oneOf ("IKSiks") <* spaces
 
 absts = fmap concat $ many1 abst
 
-abst = char '\\' *> spaces *> abst'
+-- ラムダは、バックスラッシュとギリシャ文字のラムダを許可。
+abst = oneOf ['\\', 'λ'] *> spaces *> abst'
 
 abst' = try ( (map (\a -> [a])) <$>
         (many1 (oneOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
