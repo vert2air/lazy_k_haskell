@@ -96,21 +96,24 @@ reductInput ioInf d expr = do
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
         -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
-pollInput ix (IoInfo _ input _ pd) = do
-    IoInfo eof' add _ _ <- getNchar [] $ ix - length input + 1
+pollInput ix (IoInfo _ input _ pd sgn) = do
+    IoInfo eof' add _ _ _ <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
-    return $ IoInfo eof' (input ++ add) False pd
+    return $ IoInfo eof' (input ++ add) False pd sgn
 
 -- | pollInput の補助関数。指定byte数を取得する。
+--
+-- 入力に関するフィールド以外は呼び出し側で上書きするので、
+-- ここではdefault値等を設定しておけばよ良い。
 getNchar :: [Int]     -- ^ pollInputでここまでに受信したbyte列。
         -> Int        -- ^ 取得すべき残りのbyte数。
         -> IO IoInfo
 getNchar acc n
-    | n <= 0 = return $ IoInfo False acc False def
+    | n <= 0 = return $ IoInfo False acc False def 'λ'
     | otherwise = do
         eof <- isEOF
-        if eof then return $ IoInfo True acc False def
+        if eof then return $ IoInfo True acc False def 'λ'
               else do
                   c <- getChar  -- 実際の読込み。それまではblocking。
                   getNchar (acc ++ [ord c]) (n - 1)
