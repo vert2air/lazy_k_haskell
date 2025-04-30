@@ -63,10 +63,11 @@ data IoInfo = IoInfo
                         -- 256 が補完される。
     , optV :: !Bool      -- ^ 起動時に-vオプションが指定されているか。
     , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
+    , lamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
     } deriving (Eq, Ord, Show)
 
 instance Default IoInfo where
-    def = IoInfo False [] False def
+    def = IoInfo False [] False def 'λ'
 
 instance Arbitrary IoInfo where
     arbitrary = IoInfo
@@ -74,6 +75,7 @@ instance Arbitrary IoInfo where
         <*> (map (`mod` 256) <$> arbitrary)
         <*> arbitrary
         <*> arbitrary
+        <*> oneof [pure 'λ', pure '\\']
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -121,6 +123,7 @@ data NameManager = NameManager
                          -- 先頭が de Bruij Index = 1 に対応。
                          -- 空白は、名前を与えず、de Bruijn index で表示することを示す。
     , nmUnlamStyle :: Bool -- ^ 真なら、S, K, I を Unlambdaスタイルで表示する。
+    , nmLamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
     } deriving (Show)
 
 instance Default NameManager where
@@ -132,6 +135,7 @@ instance Default NameManager where
                     ++ ['A'..'H'] ++ ['J'] ++ ['L'..'R'] ++ ['T'..'W']
         , nmStack = ""
         , nmUnlamStyle = False
+        , nmLamSign = 'λ'
         }
 
 instance Arbitrary NameManager where
@@ -140,6 +144,7 @@ instance Arbitrary NameManager where
                 ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ_")
         <*> pure ""
         <*> arbitrary
+        <*> oneof [pure 'λ', pure '\\']
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
                     deriving (Eq, Show)
@@ -149,21 +154,24 @@ data Stringifying = Stringifying String StyleInfoKind NameManager
                     deriving (Show)
 
 -- | docstring用に、toNamedString から手早く LamExpr を取り出す。
-takeStringified :: Stringifying -> String
-takeStringified (Stringifying str _ _) = str
+-- また、putStrLn を使わないと、λ が \955 と表示されてしまう。
+takeStringified :: Stringifying -> IO ()
+takeStringified (Stringifying str _ _) = putStrLn str
 
 -- | ラムダ式を文字列化
 -- De Bruijn index の変数は、'_'を付けて表示する。
 -- 入力プロミスは、'<'を付けて表示する。
 --
 -- >>> takeStringified $ toNamedString def $ la . la $ V 2
--- "\\xy.x"
+-- λxy.x
+-- >>> takeStringified $ toNamedString def {nmLamSign='\\'} $ la . la $ V 2
+-- \xy.x
 -- >>> takeStringified $ toNamedString def $ la . la $ V 1
--- "\\xx.x"
+-- λxx.x
 -- >>> takeStringified $ toNamedString def $ (Jot 1 "0" %: Nm "q") %: Nm "iota"
--- "*(0q)i"
+-- *(0q)i
 -- >>> takeStringified $ toNamedString def $ la $ V 1 %: In 0 -- 入力プロミス
--- "\\x.x<0"
+-- λx.x<0
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
   where
@@ -173,7 +181,8 @@ toNamedString mng (V v) = Stringifying name SK_General mng
             -- De Bruijn index は先頭に'_'を付ける。
             _                                     -> '_' : show v
 toNamedString mng (In ix) = Stringifying ("<" ++ show ix) SK_General mng
-toNamedString mng e@(L _ _) = Stringifying ('\\':str_ret) style_ret mng_ret
+toNamedString mng e@(L _ _) =
+                    Stringifying ((nmLamSign mng):str_ret) style_ret mng_ret
   where
     Stringifying str_ret style_ret mng_ret = digLamAbst mng e
 toNamedString mng (App _ (Nm "I") (Nm "iota"))
@@ -224,18 +233,18 @@ lastLeaf e = e
 -- | 連続するラムダ抽象を考慮した文字列化
 --
 -- >>> takeStringified $ digLamAbst def $ la . la $ V 2
--- "xy.x"
--- >>> takeStringified $ digLamAbst (NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False}) $ la $ V 2
--- "y.x"
+-- xy.x
+-- >>> takeStringified $ digLamAbst (NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False, nmLamSign = 'λ'}) $ la $ V 2
+-- y.x
 -- >>> takeStringified $ digLamAbst def $ la . la $ V 1
--- "xx.x"
+-- xx.x
 digLamAbst :: NameManager
         -> LamExpr
         -> Stringifying  -- ^ 文字列は、ラムダ抽象でbindされる名前。
                          -- λ xyz.XXX なら、"xyz"。indexの逆順。
 digLamAbst mng e@(L _ lexp@(L _ _)) = case (newName, ret) of
-    (' ':_, _    ) -> Stringifying (' ':'\\':ret) SK_General mng_ret
-    (n:_  , ' ':_) -> Stringifying (n:'.':' ':'\\':ret) SK_General mng_ret
+    (' ':_, _    ) -> Stringifying (' ':nmLamSign mng:ret) SK_General mng_ret
+    (n:_  , ' ':_) -> Stringifying (n:'.':' ':nmLamSign mng:ret) SK_General mng_ret
     (n:_  , _    ) -> Stringifying (n:ret) SK_General mng_ret
     ("", _    ) -> error $ "Internal Error : enterLambda cannot assign name"
   where
@@ -257,8 +266,8 @@ digLamAbst _     _          = error $ "Internal Error : digLamAbst: not L"
 -- ラムダ式を文字列化する際に、ラムダ抽象された変数に名前を付ける。
 -- 付けた名前は、返り値に含めるとともに、nmStackの先頭に積む。
 --
--- >>> enterLambda def $ la . la $ V 2
--- ("x",NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False})
+-- >>> enterLambda def $ la . la $ V 2   -- '\955' は 'λ' のUnicodeコード。
+-- ("x",NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False, nmLamSign = '\955'})
 enterLambda :: NameManager -> LamExpr -> (String, NameManager)
 enterLambda mng@NameManager{nmPolicy = PK_index} _
         = (" ", mng{nmStack = ' ' : nmStack mng}) -- leaveLambda用に空白追加。
@@ -347,14 +356,15 @@ getFreeVars (In ix) _ = (S.empty, S.empty, S.singleton ix)
 getFreeVars _       _ = (S.empty, S.empty, S.empty)
 
 -- | Lazy Kソースを含めたラムダ式の文字列の読み込み
+-- λ記号は、'λ'と'\\'の両方を許容する。
 -- De Bruijn index の変数は、'_'+数字 (1以上) で表示されている。
 -- 入力プロミスは、'<'+数字 (0以上) で表示されている。
 --
--- >>> readLazyK "dummy title" "\\ n" -- 無名ラムダと名前付き変数の組合せ
+-- >>> readLazyK "dummy title" "λ n" -- 無名ラムダと名前付き変数の組合せ
 -- Right (L 2 (Nm "n"))
--- >>> readLazyK "dummy title" "\\xy.x"
+-- >>> readLazyK "dummy title" "λxy.x"
 -- Right (L 3 (L 2 (V 2)))
--- >>> readLazyK "dummy title" "\\xy.y"
+-- >>> readLazyK "dummy title" "λxy.y"
 -- Right (L 3 (L 2 (V 1)))
 -- >>> readLazyK "dummy title" "\\xx.x"  -- シャドーイングされるケース
 -- Right (L 3 (L 2 (V 1)))
@@ -415,7 +425,8 @@ expr' = Nm . (:[]) . toUpper <$> oneOf ("IKSiks") <* spaces
 
 absts = fmap concat $ many1 abst
 
-abst = char '\\' *> spaces *> abst'
+-- ラムダは、バックスラッシュとギリシャ文字のラムダを許可。
+abst = oneOf ['\\', 'λ'] *> spaces *> abst'
 
 abst' = try ( (map (\a -> [a])) <$>
         (many1 (oneOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -555,7 +566,7 @@ reduct ioInf d              (App _ (L _ le) e) = case once of
     _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-reduct ioInf@(IoInfo eof input _ _) d e@(App s (In ix) oprd)
+reduct ioInf@(IoInfo eof input _ _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
         forceProg $ reduct ioInf d $ App s (buildInput ioInf ix) oprd
@@ -571,7 +582,7 @@ reduct ioInf            d e@(App _ x y) = case reduct ioInf d x of
     RedProg d' _ e'@(L _ _) -> forceProg $ reduct ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-reduct ioInf@(IoInfo eof input _ _) d e@(In ix)
+reduct ioInf@(IoInfo eof input _ _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
@@ -583,7 +594,7 @@ reduct _ d e            = incPds d $ return e     -- V and Nm
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta簡約に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (IoInfo eof input _ _) ix
+buildInput (IoInfo eof input _ _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
     | otherwise = error "buildInput: called under unexpected condition"
