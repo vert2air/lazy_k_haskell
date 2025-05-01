@@ -79,7 +79,8 @@ main = do
         dotFreq = maximum . (ProgDot [0, 0]:) $ for opts $ \op -> case op of
                         (DotFreq d) -> d
                         _ -> ProgDot [0, 0]
-        ioInf = IoInfo False [] verbose dotFreq
+        -- lazyの出力にラムダ記号は含まれない。適当にdefault値を設定しておく。
+        ioInf = IoInfo False [] verbose dotFreq 'λ'
     lazy ioInf maxOut srcFile
 
 lazy :: IoInfo -> Maybe Int -> String -> IO ()
