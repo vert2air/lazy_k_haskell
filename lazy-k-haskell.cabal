@@ -47,7 +47,7 @@ executable lazy
 test-suite lazy-k-haskell-test
     import:           warnings
     default-language: Haskell2010
-    -- other-modules:
+    other-modules:    HUnitTests, QuickCheckTests
     -- other-extensions:
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
