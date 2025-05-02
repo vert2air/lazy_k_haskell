@@ -2,15 +2,15 @@ import Data.Char (ord)
 import Data.Default (Default(def))
 import Data.Either (fromRight)
 
-import LazyKCore (LamExpr(..), (%:), la, readLazyK, abstElim, toNamedString,
-                  comple, takeStringified)
+import LamCalcCore (LamExpr(..), (%:), la, readLazyK, abstElim, toNamedString
+                    , comple, takeStringified)
 -- import LazyKParts (shortChNum)
 import LamCalcParts (lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not
-          , ch_0, ch_1, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256
-          , is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq
-          , lc_nil, cons, car, cdr
-          , diff_1_pair, cn_pred_r2, cn_minus_r2, is_eq_r2
-          , y_comb, shortChNum)
+            , ch_0, ch_1, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256
+            , is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq
+            , lc_nil, cons, car, cdr
+            , diff_1_pair, cn_pred_r2, cn_minus_r2, is_eq_r2
+            , y_comb, shortChNum)
 
 -- getPutLine input
 getPutLine = y_comb %:

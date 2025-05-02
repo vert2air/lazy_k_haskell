@@ -2,8 +2,8 @@ module HUnitTests where
 
 import Test.HUnit
 
-import LazyKCore (reductInf, toLambda, readLazyK)
-import LazyKParts (shortChNum, getChNum)
+import LamCalcCore (reductInf, toLambda, readLazyK)
+import LamCalcParts (shortChNum, getChNum)
 
 hUnitAll :: IO Counts
 hUnitAll = do
