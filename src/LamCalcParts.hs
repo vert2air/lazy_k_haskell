@@ -19,6 +19,7 @@ readStr = fromRight (error "internal") . readLazyK ""
 ch_0, ch_1, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256 :: LamExpr
 ch_0 = readStr $ shortChNum !! 0
 ch_1 = readStr $ shortChNum !! 1
+ch_LF = readStr $ shortChNum !! 10
 ch_CR = readStr $ shortChNum !! 13
 ch_H = readStr $ shortChNum !! (ord 'H')
 ch_e = readStr $ shortChNum !! (ord 'e')
