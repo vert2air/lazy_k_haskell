@@ -5,7 +5,7 @@ import Data.Default (Default(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
-                , reduct, forceProg, isPdMature, clearPd)
+                , reduct, forceProg, isPdMature, clearPd, toNamedString)
 import LamCalcParts (getChNum)
 
 -- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
@@ -50,7 +50,9 @@ decons ioInf d expr =
                     decons ioInf' d' expr'
                 -- Lazy Kプログラムなら、scott encode の list を出力する筈。
                 -- cons の形でなく、beta簡約も進まないのなら、エラー。
-                | otherwise -> error $ "Invalid program: ret=" ++ show ret
+                | otherwise -> error $ "Invalid program: ret="
+                                        ++ show (toNamedString def expr')
+                                        ++ " = " ++ show ret
 
 -- | Beta/Eta簡約 (遅延入力対応)
 reductInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
