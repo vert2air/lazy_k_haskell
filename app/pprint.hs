@@ -6,8 +6,8 @@ import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
                               getOpt, usageInfo)
 import System.Environment (getArgs)
 
-import LazyKCore (Stringifying(..), NameManager(..), PolicyKind(..),
-                  readLazyK, toNamedString)
+import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..),
+                    readLazyK, toNamedString)
 
 data Flag = ArgExpr String
             | ArgStyleUnlam Bool

@@ -13,8 +13,8 @@ import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
 import System.CPUTime (getCPUTime)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
-import LazyKCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
-                  readLazyK, toLambda)
+import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
+                    readLazyK, toLambda)
 import LazyKParts (deconsLoop, onlyV)
 
 data Flag = MaxOut Int

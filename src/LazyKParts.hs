@@ -4,7 +4,7 @@ import Data.Char (chr, ord)
 import Data.Default (Default(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
-import LazyKCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
+import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
                 , reduct, forceProg, isPdMature, clearPd)
 import LamCalcParts (getChNum)
 

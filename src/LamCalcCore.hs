@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 
-module LazyKCore where
+module LamCalcCore where
 
 import Debug.Trace (trace)
 -- trace :: String -> a -> a

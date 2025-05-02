@@ -4,10 +4,10 @@ import Data.Default (Default(..))
 import Test.QuickCheck (Args(..), Result(..), Property,
                         (==>), quickCheckWithResult, stdArgs)
 
-import LazyKCore (LamExpr(..), NameManager(..) , Stringifying(..), IoInfo(..)
-                , ProgDot(..), RedResult(..)
-                , reduct, isPdMature, toLambda
-                , abstElim, toNamedString, readLazyK, comple)
+import LamCalcCore (LamExpr(..), NameManager(..), Stringifying(..), IoInfo(..)
+                    , ProgDot(..), RedResult(..)
+                    , reduct, isPdMature, toLambda
+                    , abstElim, toNamedString, readLazyK, comple)
 
 qc_main :: IO [Result]
 qc_main = do

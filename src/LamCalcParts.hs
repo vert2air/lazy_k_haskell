@@ -3,7 +3,7 @@ module LamCalcParts where
 import Data.Char (ord)
 import Data.Either (fromRight)
 
-import LazyKCore (LamExpr(..), la, (%:), readLazyK)
+import LamCalcCore (LamExpr(..), la, (%:), readLazyK)
 
 lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not :: LamExpr
 lc_true = la . la $ V 2
