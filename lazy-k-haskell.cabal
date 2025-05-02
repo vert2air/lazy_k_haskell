@@ -21,7 +21,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  LazyKCore, LazyKParts
+    exposed-modules:  LazyKCore, LamCalcParts, LazyKParts
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.21.0.0
