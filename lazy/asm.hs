@@ -6,19 +6,20 @@ import LamCalcCore (LamExpr(..), (%:), la, readLazyK, abstElim, toNamedString
                     , comple, takeStringified)
 -- import LazyKParts (shortChNum)
 import LamCalcParts (lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not
-            , ch_0, ch_1, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256
+            , ch_0, ch_1, ch_LF, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256
             , is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq
             , lc_nil, cons, car, cdr
             , diff_1_pair, cn_pred_r2, cn_minus_r2, is_eq_r2
             , y_comb, shortChNum)
 
 -- getPutLine input
-getPutLine = y_comb %:
+getPutLine =
+    y_comb %:
     (la
         (la $
             if_then_else
-                %: (eq_r2 %: (car %: V 1) %: ch_CR)
-                %: ch_256
+                %: (is_eq_r2 %: (car %: V 1) %: ch_LF)
+                %: (cons %: ch_256 %: lc_nil)
                 %: (cons
                     %: (car %: V 1)
                     %: (V 2 %: (cdr %: V 1))
@@ -36,7 +37,7 @@ foo (buf:input) =
 foo args = if_then_else %: is_eq (car %: (cdr %: args))
     (cons %: ch_H %: (cons %: ch_e %: (cons %: ch_l %: (cons %: ch_l %: (cons %: ch_o %: lc_nil)))))
 
-hello = 
+hello =
     (cons %: ch_H %: (cons %: ch_e %: (cons %: ch_l %: (cons %: ch_l %: (cons %: ch_o %: lc_nil)))))
 -}
 {-
@@ -74,6 +75,7 @@ eq_r2 = la( cons %:
               )
 
 -- 入力byteの累積和を求める。途中に0が出た時点で止める。
+-- sum_to_0 = (init : array-of-input)
 sum_to_0 = la(
     (y_comb %:
       la(
@@ -94,8 +96,8 @@ sum_to_0 = la(
 
 asm :: LamExpr -> IO ()
 asm input = do
-    takeStringified . toNamedString def $ input
-    takeStringified . toNamedString def . comple abstElim $ input
+    -- takeStringified . toNamedString def $ input
+    -- takeStringified . toNamedString def . comple abstElim $ input
     takeStringified . toNamedString def . comple abstElim . comple abstElim $ input
 
 -- echo add.abst_elim.toCC
