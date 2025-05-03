@@ -5,7 +5,7 @@ import Data.Default (Default(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
-                , reduct, forceProg, isPdMature, clearPd, toNamedString)
+                , reduct, forceProg, isPdMature, incPd, clearPd, toNamedString)
 import LamCalcParts (getChNum)
 
 -- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
@@ -60,7 +60,21 @@ reductInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
             -> LamExpr   -- ^ 簡約対象のラムダ式
             -> IO (RedResult LamExpr, IoInfo)
 reductInput ioInf d expr = do
-    let ret = reduct ioInf d expr
+    let ret' = reduct ioInf d False expr
+    let ret'' = incPd 0 ret'
+    ret <- case ret'' of
+        op@(RedProg pd ixp ep)
+            | isPdMature 0 ioInf pd -> do
+                hPutStr stderr "*"  -- 進捗dotの表示
+                hFlush stderr
+                return $ RedProg (clearPd 0 pd) ixp ep
+            | otherwise -> return op
+        os@(RedStop pd ixs es)
+            | isPdMature 0 ioInf pd -> do
+                hPutStr stderr "*"  -- 進捗dotの表示
+                hFlush stderr
+                return $ RedStop (clearPd 0 pd) ixs es
+            | otherwise -> return os
     case ret of
         RedProg pd ix expr'
             | isPdMature 1 ioInf pd -> do
