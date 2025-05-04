@@ -1,16 +1,15 @@
 import Data.Char (ord)
 import Data.Default (Default(def))
-import Data.Either (fromRight)
 
 import LamCalcCore (LamExpr(..), (%:), la, readLazyK, abstElim, toNamedString
                     , comple, takeStringified)
 -- import LazyKParts (shortChNum)
 import LamCalcParts (lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not
-            , ch_0, ch_1, ch_LF, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256
+            , ch_0, ch_1, ch_LF, ch_CR, ch_256
             , is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq
             , lc_nil, cons, car, cdr
             , diff_1_pair, cn_pred_r2, cn_minus_r2, is_eq_r2
-            , y_comb, shortChNum)
+            , y_comb, shortChNum, readStr)
 
 -- getPutLine input
 getPutLine =
@@ -27,23 +26,43 @@ getPutLine =
         )
     )
 
+addStrHead :: String -> LamExpr -> LamExpr
+addStrHead str expr = foldr addChHead expr str
+
+addChHead :: Char -> LamExpr -> LamExpr
+addChHead ch expr = cons %: (readStr $ shortChNum !! (ord ch)) %: expr
+
 {-
-foo (buf:input) =
-    if_then_else
-        %: (car input == ch_CR)
-        %: ("Hello, " + buf + "!\n\256")
-        %: (foo (buf + car input : cdr input))
-
-foo args = if_then_else %: is_eq (car %: (cdr %: args))
-    (cons %: ch_H %: (cons %: ch_e %: (cons %: ch_l %: (cons %: ch_l %: (cons %: ch_o %: lc_nil)))))
-
-hello =
-    (cons %: ch_H %: (cons %: ch_e %: (cons %: ch_l %: (cons %: ch_l %: (cons %: ch_o %: lc_nil)))))
+-- 改行なしパターン
+$ date ; cabal run -O2 lazy -- lazy/prompt_resp_v1.lazy ; date
+2025年 5月  4日 日曜日 14:11:46
+Your name?
+>#1
+1!2025年 5月  4日 日曜日 14:30:03
 -}
 {-
-foo 'Your name?\n>\n' input
-prompt_resp
+-- 何故か、改行を入れても、改行されなかった。
+$ date ; cabal run -O2 lazy -- lazy/prompt_resp_v1.lazy ; date
+2025年 5月  4日 日曜日 14:35:35
+Your name?
+>#1
+1!2025年 5月  4日 日曜日 14:53:16
 -}
+
+promptResp = la $
+    addStrHead "Your name?\n>" $
+    y_comb
+        %: (la . la $
+            if_then_else
+                %: (is_eq_r2 %: (car %: V 1) %: ch_LF)
+                %: addChHead '!' (addChHead '\n' (cons %: ch_256 %: lc_nil))
+                %: (cons
+                    %: (car %: V 1)
+                    %: (V 2 %: (cdr %: V 1))
+                    )
+        )
+        -- %: (addStrHead "Hi, " (V 1))
+        %: (addChHead '#' (V 1))
 
 -- 入力の 1 byte目と 2 byte目を足したものを出力
 add = la (
@@ -106,4 +125,4 @@ asm input = do
 -- echo sum_to_0.abst_elim.toCC
 main :: IO ()
 main = do
-    asm getPutLine
+    asm promptResp

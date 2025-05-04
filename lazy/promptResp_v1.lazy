@@ -1,0 +1,52 @@
+# プロンプトに対して入力した文字の前後に、飾りをつけて出力
+# ========================================================
+#
+# 実現したかったこと
+# ------------------
+#
+# 下記の様に、起動するとプロンプトが表示され、
+# ```
+# $ cabal run -O2 lazy -- lazy/promptResp_v1.lazy
+# Your name?
+# >
+# ```
+# 例えば、コンソールから "vert2air" と入力すると、
+# ```
+# Hi, vert2air!
+# ```
+# と表示されること。
+#
+# 課題
+# ----
+# 遅い。遅すぎる。
+#
+# 対策(回避策)
+# ------------
+# 動作確認を優先し、目的を変更する。
+# 名前の前後の飾りの文字("Hi, ", "!")を少なくする。
+# 名前も1文字だけ入力する。
+# 名前や飾り文字のASCIIコードの値を小さくする。
+# 具体的には、名前は "1" にして、以下の出力を得ることを目指す。
+# ```
+# #1!
+# ```
+# 
+# どうなったか
+# ------------
+# プロンプトの表示の後にキーボードから入力しても、画面にエコーバックされない。
+# 暫く待つと、飾り文字の"#"が先に表示され、
+# その後、入力のエコーバック（"1" と リターン）が表示され、
+# 更に次の行に、出力の残り（"1!"）が表示されるようになった。
+# つまり、こんな感じ。
+# ```
+# Your name?
+# >#1
+# 1!
+# ```
+# まさに、https://tromp.github.io/cl/lazy-k.html の
+# The fall from grace の話。
+# 尚、プログラムの正常終了までに、18分ぐらい掛かった。
+# ちなみに、'#' の代わりに '~' とすると、
+# エコーバックも'~'も何時まで経っても表示されなかった。
+#
+S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(SI(K(S(S(KS)K)))(S(K(SS(S(SI))S))K(S(S(KS)K)I))(SII(S(S(KS)K)I)(S(K(SS(S(SI))S))K)))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(S(KS)K)(S(S(KS)K)(S(KS)K(SII(S(S(KS)K)I))(SII(S(K(SS(S(SI))S))K))))))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(KS)K(SII(S(S(KS)K)I))(S(S(KS)K)(S(S(KS)K)(SII(S(K(SS(S(SI))S))K))))))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(S(KS)K)(S(KS)K(SII(S(S(KS)K)I))(S(S(KS)K)(SII(S(K(SS(S(SI))S))K))))))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(SII(S(S(KS)K)I))(S(S(KS)K)I))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(S(KS)K)(S(KS)K(SII(S(S(KS)K)I))(SII(S(K(SS(S(SI))S))K)))))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(SI(K(S(S(KS)K)))(S(SI)I(S(S(KS)K)I))(SII(S(S(KS)K)I)(S(K(SS(S(SI))S))K)))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(KS)K(SII(S(S(KS)K)I))(SII(S(K(SS(S(SI))S))K))))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(S(KS)K)I(S(S(KS)K)(S(S(KS)K)I(S(K(SS(S(SI))S))K)))))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(KS)K(S(S(KS)K)(S(S(KS)K)(S(S(KS)K)(SII(S(S(KS)K)I)))))(S(S(KS)K)I(S(K(SS(S(SI))S))K)))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(S(KS)K)I(S(K(SS(S(SI))S))K)))))(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(KS)K(S(S(KS)K)I)(SI(K(S(S(KS)K)))(SII(S(S(KS)K)I))(SII(S(K(SS(S(SI))S))K))))))(S(K(S(S(S(KS)K)(K(SII)))(S(S(KS)K)(K(SII)))(S(K(S(S(S(KI)(S(S(K(S(S(KS)(S(K(S(K(SS(K(K(KI)))))))(S(K(S(K(S(SI(K(K(KI))))(KK)))))(S(K(S(S(K(S(SI(K(S(K(SI(K(KI))))(S(SI(K(S(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)))(S(S(K(S(KS)(S(K(S(KS)))(S(KK)))))(SI(KK)))(KI)))(SI(KK)))))(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(KI)I))))))))K)))K))))(S(K(S(K(S(SI(K(K(KI))))(KK)))))(S(K(S(SI(K(S(K(SI(K(KI))))(S(SI(K(S(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)))(S(S(K(S(KS)(S(K(S(KS)))(S(KK)))))(SI(KK)))(KI)))(SI(KK)))))(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(KI)I))))))))K))))(SI(KK)))(K(S(S(KS)K)(S(S(KS)K)I(S(K(SS(S(SI))S))K))))))(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(S(KS)K)(SII(S(S(KS)K)I))(S(S(KS)K)I)))(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(SII(SII(S(S(KS)K)I)))K))))))(S(K(S(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)))(SI(KK)))))(S(S(KS)K)(K(SI(K(KI)))))))))(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(S(S(KS)K)(S(KS)K(S(S(KS)K)I)(S(S(KS)K)(S(SI)I(S(S(KS)K)I))))))))))))))))))
