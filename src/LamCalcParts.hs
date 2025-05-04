@@ -1,6 +1,5 @@
 module LamCalcParts where
 
-import Data.Char (ord)
 import Data.Either (fromRight)
 
 import LamCalcCore (LamExpr(..), la, (%:), readLazyK)
@@ -16,15 +15,11 @@ lc_not = la $ V 1 %: lc_false %: lc_true
 readStr :: String -> LamExpr
 readStr = fromRight (error "internal") . readLazyK ""
 
-ch_0, ch_1, ch_CR, ch_H, ch_e, ch_l, ch_o, ch_256 :: LamExpr
+ch_0, ch_1, ch_LF, ch_CR, ch_256 :: LamExpr
 ch_0 = readStr $ shortChNum !! 0
 ch_1 = readStr $ shortChNum !! 1
 ch_LF = readStr $ shortChNum !! 10
 ch_CR = readStr $ shortChNum !! 13
-ch_H = readStr $ shortChNum !! (ord 'H')
-ch_e = readStr $ shortChNum !! (ord 'e')
-ch_l = readStr $ shortChNum !! (ord 'l')
-ch_o = readStr $ shortChNum !! (ord 'o')
 ch_256 = readStr $ shortChNum !! 256
 
 is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq :: LamExpr
