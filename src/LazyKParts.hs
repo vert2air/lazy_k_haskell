@@ -60,7 +60,7 @@ reductInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
             -> LamExpr   -- ^ 簡約対象のラムダ式
             -> IO (RedResult LamExpr, IoInfo)
 reductInput ioInf d expr = do
-    let ret' = reduct ioInf d False expr
+    let ret' = reduct ioInf d expr
     let ret'' = incPd 0 ret'
     ret <- case ret'' of
         op@(RedProg pd ixp ep)
