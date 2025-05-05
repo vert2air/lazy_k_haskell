@@ -3,9 +3,8 @@ import Data.Default (Default(def))
 
 import LamCalcCore (LamExpr(..), (%:), la, abstElim, toNamedString, comple
             , takeStringified)
--- import LazyKParts (shortChNum)
 import LamCalcParts (if_then_else
-            , ch_0, ch_1, ch_LF, ch_256, is_zero, cn_plus, cn_mult, is_eq
+            , ch_0, ch_1, ch_256, is_zero, cn_plus, cn_mult, is_eq
             , lc_nil, cons, car, cdr, is_eq_LF, is_eq_r2
             , y_comb, shortChNum, readStr)
 
@@ -15,7 +14,7 @@ getPutLine =
     (la
         (la $
             if_then_else
-                %: (is_eq_r2 %: (car %: V 1) %: ch_LF)
+                %: (is_eq_LF %: (car %: V 1))
                 %: (cons %: ch_256 %: lc_nil)
                 %: (cons
                     %: (car %: V 1)
@@ -30,54 +29,7 @@ addStrHead str expr = foldr addChHead expr str
 addChHead :: Char -> LamExpr -> LamExpr
 addChHead ch expr = cons %: (readStr $ shortChNum !! (ord ch)) %: expr
 
-{-
--- 改行なしパターン
-$ date ; cabal run -O2 lazy -- lazy/prompt_resp_v1.lazy ; date
-2025年 5月  4日 日曜日 14:11:46
-Your name?
->#1
-1!2025年 5月  4日 日曜日 14:30:03
--}
-{-
--- 何故か、改行を入れても、改行されなかった。
-$ date ; cabal run -O2 lazy -- lazy/prompt_resp_v1.lazy ; date
-2025年 5月  4日 日曜日 14:35:35
-Your name?
->#1
-1!2025年 5月  4日 日曜日 14:53:16
--}
-
-promptResp :: LamExpr
-promptResp = la $
-    addStrHead "Your name?\n>" $
-    y_comb
-        %: (la . la $
-            if_then_else
-                %: (is_eq_r2 %: (car %: V 1) %: ch_LF)
-                %: addChHead '!' (addChHead '\n' (cons %: ch_256 %: lc_nil))
-                %: (cons
-                    %: (car %: V 1)
-                    %: (V 2 %: (cdr %: V 1))
-                    )
-        )
-        -- %: (addStrHead "Hi, " (V 1))
-        %: (addChHead '#' (V 1))
-
-promptResp_faster :: LamExpr
-promptResp_faster = la $
-    addStrHead "What's your name?\n>" $
-    y_comb
-        %: (la . la $
-            if_then_else
-                %: (is_eq_LF %: (car %: V 1))   -- 高速比較
-                %: addStrHead "!\n" (cons %: ch_256 %: lc_nil)
-                %: (cons
-                    %: (car %: V 1)
-                    %: (V 2 %: (cdr %: V 1))
-                    )
-        )
-        %: (addStrHead "Hi, " (V 1))
-
+-- | stdinのLF判定高速化と、stdin入力前にprefixが表示されるのを抑止する例。
 promptResp_faster_prefix :: LamExpr
 promptResp_faster_prefix = la $
     addStrHead "What's your name?\n>" $
