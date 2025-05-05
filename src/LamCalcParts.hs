@@ -34,11 +34,13 @@ is_eq = la . la $ (
         %: (is_zero %: (cn_minus %: V 2 %: V 1))
     )
 
-lc_nil, cons, car, cdr :: LamExpr
-lc_nil = la . la $ V 2
+lc_nil, cons, car, cdr, is_nil :: LamExpr
+lc_nil = la . la $ V 1
 cons = la . la . la $ V 1 %: V 3 %: V 2
 car = la $ V 1 %: lc_true
 cdr = la $ V 1 %: lc_false
+-- | nilかconsかを判定するコード。
+is_nil = la $ (V 1) %: (la . la . la $ lc_false) %: lc_true
 
 {- 引数が Church数で ASCIIコードの LF (=0x0a) であるかを判定
 --
