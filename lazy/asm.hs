@@ -5,7 +5,7 @@ import LamCalcCore (LamExpr(..), (%:), la, abstElim, toNamedString, comple
             , takeStringified)
 -- import LazyKParts (shortChNum)
 import LamCalcParts (if_then_else
-            , ch_0, ch_1, ch_LF, ch_256, is_zero, cn_plus, is_eq
+            , ch_0, ch_1, ch_LF, ch_256, is_zero, cn_plus, cn_mult, is_eq
             , lc_nil, cons, car, cdr, is_eq_LF, is_eq_r2
             , y_comb, shortChNum, readStr)
 
@@ -78,6 +78,25 @@ promptResp_faster = la $
         )
         %: (addStrHead "Hi, " (V 1))
 
+promptResp_faster_prefix :: LamExpr
+promptResp_faster_prefix = la $
+    addStrHead "What's your name?\n>" $
+    cons
+        %: (cn_plus
+            %: (readStr $ shortChNum !! (ord 'H'))
+            %: (cn_mult %: (car %: (V 1)) %: ch_0)) -- 無理矢理 input参照
+        %: ((addStrHead "i, ") $
+            y_comb %: (la . la $
+                if_then_else
+                    %: (is_eq_LF %: (car %: V 1))   -- 高速比較
+                    %: addStrHead "!\n" (cons %: ch_256 %: lc_nil)
+                    %: (cons
+                        %: (car %: V 1)
+                        %: (V 2 %: (cdr %: V 1))
+                        )
+            )
+            %: (V 1))
+
 -- 入力の 1 byte目と 2 byte目を足したものを出力
 add :: LamExpr
 add = la (
@@ -143,4 +162,5 @@ asm input = do
 -- echo sum_to_0.abst_elim.toCC
 main :: IO ()
 main = do
-    asm promptResp_faster
+    -- asm getPutLine
+    asm promptResp_faster_prefix
