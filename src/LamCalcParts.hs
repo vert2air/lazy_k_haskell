@@ -15,11 +15,10 @@ lc_not = la $ V 1 %: lc_false %: lc_true
 readStr :: String -> LamExpr
 readStr = fromRight (error "internal") . readLazyK ""
 
-ch_0, ch_1, ch_LF, ch_CR, ch_256 :: LamExpr
+ch_0, ch_1, ch_LF, ch_256 :: LamExpr
 ch_0 = readStr $ shortChNum !! 0
 ch_1 = readStr $ shortChNum !! 1
 ch_LF = readStr $ shortChNum !! 10
-ch_CR = readStr $ shortChNum !! 13
 ch_256 = readStr $ shortChNum !! 256
 
 is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq :: LamExpr
@@ -40,6 +39,19 @@ lc_nil = la . la $ V 2
 cons = la . la . la $ V 1 %: V 3 %: V 2
 car = la $ V 1 %: lc_true
 cdr = la $ V 1 %: lc_false
+
+{- 引数が Church数で ASCIIコードの LF (=0x0a) であるかを判定
+--
+-- 結局遅いのは、引き算。引き算をする代わりに、テーブルを持つ。
+-- ASCIIコードの話なので、入力終了の 256 を含めても 257個のテーブルで済む。
+-- is_eq_r2 と比べても劇的に速い。その代わりに、Lazy Kコードが大きくなる。
+-}
+is_eq_LF :: LamExpr
+is_eq_LF = la . (car %:) . (%:) ((V 1) %: cdr) $
+        foldr (\a d -> cons %: a %: d) lc_nil $
+               (map (const lc_false) [(0 :: Int) .. 9])
+            ++ [lc_true]           -- 10
+            ++ (map (const lc_false) [(11 :: Int) .. 256])
 
 diff_1_pair, cn_pred_r2, cn_minus_r2, is_eq_r2 :: LamExpr
 diff_1_pair = la ( cons

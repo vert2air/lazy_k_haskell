@@ -1,17 +1,15 @@
 import Data.Char (ord)
 import Data.Default (Default(def))
 
-import LamCalcCore (LamExpr(..), (%:), la, readLazyK, abstElim, toNamedString
-                    , comple, takeStringified)
+import LamCalcCore (LamExpr(..), (%:), la, abstElim, toNamedString, comple
+            , takeStringified)
 -- import LazyKParts (shortChNum)
-import LamCalcParts (lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not
-            , ch_0, ch_1, ch_LF, ch_CR, ch_256
-            , is_zero, cn_succ, cn_plus, cn_mult, cn_pred, cn_minus, is_eq
-            , lc_nil, cons, car, cdr
-            , diff_1_pair, cn_pred_r2, cn_minus_r2, is_eq_r2
+import LamCalcParts (if_then_else
+            , ch_0, ch_1, ch_LF, ch_256, is_zero, cn_plus, is_eq
+            , lc_nil, cons, car, cdr, is_eq_LF, is_eq_r2
             , y_comb, shortChNum, readStr)
 
--- getPutLine input
+getPutLine :: LamExpr
 getPutLine =
     y_comb %:
     (la
@@ -49,6 +47,7 @@ Your name?
 1!2025年 5月  4日 日曜日 14:53:16
 -}
 
+promptResp :: LamExpr
 promptResp = la $
     addStrHead "Your name?\n>" $
     y_comb
@@ -64,7 +63,23 @@ promptResp = la $
         -- %: (addStrHead "Hi, " (V 1))
         %: (addChHead '#' (V 1))
 
+promptResp_faster :: LamExpr
+promptResp_faster = la $
+    addStrHead "What's your name?\n>" $
+    y_comb
+        %: (la . la $
+            if_then_else
+                %: (is_eq_LF %: (car %: V 1))   -- 高速比較
+                %: addStrHead "!\n" (cons %: ch_256 %: lc_nil)
+                %: (cons
+                    %: (car %: V 1)
+                    %: (V 2 %: (cdr %: V 1))
+                    )
+        )
+        %: (addStrHead "Hi, " (V 1))
+
 -- 入力の 1 byte目と 2 byte目を足したものを出力
+add :: LamExpr
 add = la (
     cons
         %: ( cn_plus %: (car%:V(1)) %: (car%:(cdr%:V(1))) )
@@ -74,6 +89,7 @@ add = la (
 
 -- 入力の 1 byte目と 2 byte目が等しいなら 1、でなければ 0 を出力
 -- 7, 7 で、5分掛かった。ここまでは、1増やすと約3倍になる感じ。
+eq :: LamExpr
 eq = la ( cons
             %: ( if_then_else %:
                 (is_eq %: (car%:V(1)) %: (car%:(cdr%:V(1)))) %:
@@ -85,6 +101,7 @@ eq = la ( cons
 
 -- 入力の 1 byte目と 2 byte目が等しいなら 1、でなければ 0 を出力
 -- 7, 7 ぐらいだと、eq より大分速い。
+eq_r2 :: LamExpr
 eq_r2 = la( cons %:
               ( if_then_else %:
                 (is_eq_r2 %: (car%:V(1)) %: (car%:(cdr%:V(1)))) %:
@@ -95,6 +112,7 @@ eq_r2 = la( cons %:
 
 -- 入力byteの累積和を求める。途中に0が出た時点で止める。
 -- sum_to_0 = (init : array-of-input)
+sum_to_0 :: LamExpr
 sum_to_0 = la(
     (y_comb %:
       la(
@@ -125,4 +143,4 @@ asm input = do
 -- echo sum_to_0.abst_elim.toCC
 main :: IO ()
 main = do
-    asm promptResp
+    asm promptResp_faster
