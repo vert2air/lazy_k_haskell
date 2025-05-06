@@ -159,8 +159,10 @@ takeStringified :: Stringifying -> IO ()
 takeStringified (Stringifying str _ _) = putStrLn str
 
 -- | ラムダ式を文字列化
+--
 -- De Bruijn index の変数は、'_'を付けて表示する。
 -- 入力プロミスは、'<'を付けて表示する。
+-- Lazy Kのコードとの混在も対応。
 --
 -- >>> takeStringified $ toNamedString def $ la . la $ V 2
 -- λxy.x
@@ -172,6 +174,11 @@ takeStringified (Stringifying str _ _) = putStrLn str
 -- *(0q)i
 -- >>> takeStringified $ toNamedString def $ la $ V 1 %: In 0 -- 入力プロミス
 -- λx.x<0
+-- >>> let expr = Nm "S" %: Nm "K" %: (Nm "I" %: Nm "K")
+-- >>> takeStringified $ toNamedString def {nmUnlamStyle=True} expr
+-- ``sk`ik
+-- >>> takeStringified $ toNamedString def {nmUnlamStyle=False} expr
+-- SK(IK)
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
   where
@@ -202,6 +209,9 @@ toNamedString mng (App _ fun oprd) =
         (Nm "iota", _,     _, _           ) -> ("*", SK_General)
         (_,  SK_IotaUnlam, Nm "iota", _) -> ("*", SK_IotaUnlam)
         (_,  _,            Nm "iota", _) -> ("*", SK_General)
+        (_, SK_IotaUnlam, _, SK_IotaUnlam) -> ("`", SK_IotaUnlam)
+        (_, SK_PureIota, _, SK_IotaUnlam) -> ("`", SK_IotaUnlam)
+        (_, SK_IotaUnlam, _, SK_PureIota) -> ("`", SK_IotaUnlam)
         _ -> (if nmUnlamStyle mng then "`" else "", SK_General)
     par_fun = case (fun, style_fun, appOp) of
         (L _ _, _, _) -> "(" ++ str_fun ++ ")"
