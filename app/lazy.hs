@@ -13,6 +13,7 @@ import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
 import System.CPUTime (getCPUTime)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
+import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
 import LazyKParts (deconsLoop, onlyV)
@@ -85,13 +86,14 @@ main = do
         ioInf = IoInfo False [] verbose dotFreq 'λ' startTime
     onlyV ioInf $
         hPutStrLn stderr $ "Start time : " ++ show startTime
-    lazy ioInf maxOut srcFile
+    exitCode <- lazy ioInf maxOut srcFile
     endTime <- getCPUTime
     onlyV ioInf $ do
         let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
         hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
+    exitWith exitCode
 
-lazy :: IoInfo -> Maybe Int -> String -> IO ()
+lazy :: IoInfo -> Maybe Int -> String -> IO ExitCode
 lazy ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
     case readLazyK srcFile lazySrc of
@@ -99,4 +101,5 @@ lazy ioInf maxOut srcFile = do
             deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
+            return $ ExitFailure 1
 

@@ -4,6 +4,7 @@ import Data.Char (chr, ord)
 import Data.Default (Default(..))
 import Numeric (showHex)
 import System.CPUTime (getCPUTime)
+import System.Exit (ExitCode(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
@@ -15,8 +16,8 @@ deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
         -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
         -> IoInfo       -- ^ 入力情報と出力関係のオプション
         -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
-        -> IO ()
-deconsLoop _  (Just 0)  _     _    = return ()
+        -> IO ExitCode      -- ^ プログラムの終了コード
+deconsLoop _  (Just 0)  _     _    = return ExitSuccess
 deconsLoop pd countdown ioInf expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
     (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
@@ -37,7 +38,11 @@ deconsLoop pd countdown ioInf expr = do
             | otherwise -> do
                 onlyV ioInf'' $
                     hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
-        _ -> hPutStrLn stderr $ "car is not number"
+                return $ if n == 256 then ExitSuccess
+                                     else ExitFailure (n - 256)
+        _ -> do
+            hPutStrLn stderr $ "car is not number"
+            return $ ExitFailure 1
 
 -- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
 decons :: IoInfo     -- ^ 入力情報と出力関係のオプション
