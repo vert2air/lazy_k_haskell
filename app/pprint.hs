@@ -2,9 +2,10 @@ module Main where
 
 import Data.Default (Default(..))
 import Data.Either (fromRight)
+import GHC.Data.Maybe (firstJust)
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
                               getOpt, usageInfo)
-import System.Environment (getArgs)
+import System.Environment (getArgs, lookupEnv)
 
 import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..),
                     readLazyK, toNamedString)
@@ -65,11 +66,17 @@ main = do
             readFile srcFile
         _ -> error "Invalid arguments. Use -e expr or FILE."
     let toCat = fromRight (error "Illegal express") . readLazyK "" $ target
+    envRawSign <- lookupEnv "LAMBDA_SIGN"
+    let envSign = case envRawSign of
+            Nothing -> envSign
+            Just [a] -> Just a   -- 抽象化記号は 1文字限定
+            _ -> error "Error : Env. var. LAMBDA_SIGN has multi-charactors"
+    let finalSign = maybe (nmLamSign def) id $ argSign `firstJust` envSign
     let mng = def { nmPolicy = maybe (nmPolicy def) id argPolicy
                   , nmPool = maybe (nmPool def) id argPool
                   , nmStack = nmStack def
                   , nmUnlamStyle = maybe (nmUnlamStyle def) id argStyle
-                  , nmLamSign = maybe (nmLamSign def) id argSign
+                  , nmLamSign = finalSign
                   }
     let Stringifying ret _ _ = toNamedString mng toCat
     putStrLn ret
