@@ -26,8 +26,9 @@ options :: [OptDescr Flag]
 options =
     [ Option [] ["max"] (ReqArg (MaxOut . readInt) "COUNT") "Max output count"
     , Option ['v'] [] (NoArg (Verbose True)) "Verbose output"
-    , Option ['d'] [] (ReqArg (DotFreq . ProgDot . map readInt . splitOn ",")
-                       "d0,d1") "Progress dot frequency"
+    , Option ['d'] [] (ReqArg
+            (DotFreq . ProgDot . map readInt . splitOn "," . filter (/='_'))
+                                "d0,d1") "Progress dot frequency"
     ]
 
 -- | 文字列から、10進数取り出し
