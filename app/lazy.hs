@@ -69,6 +69,7 @@ main = do
     -- /c/Windows/System32/chcp.com 65001
     (opts, [srcFile]) <- compileOpts =<< getArgs
     -- putStrLn . show $ opts
+    startTime <- getCPUTime
     let for = flip map
         forAny = flip any
         maxOut = maximum . (Nothing:) $ for opts $ \op -> case op of
@@ -81,22 +82,21 @@ main = do
                         (DotFreq d) -> d
                         _ -> ProgDot [0, 0]
         -- lazyの出力にラムダ記号は含まれない。適当にdefault値を設定しておく。
-        ioInf = IoInfo False [] verbose dotFreq 'λ'
+        ioInf = IoInfo False [] verbose dotFreq 'λ' startTime
+    onlyV ioInf $
+        hPutStrLn stderr $ "Start time : " ++ show startTime
     lazy ioInf maxOut srcFile
+    endTime <- getCPUTime
+    onlyV ioInf $ do
+        let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
+        hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
 
 lazy :: IoInfo -> Maybe Int -> String -> IO ()
 lazy ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
-    startTime <- getCPUTime
-    onlyV ioInf $
-        hPutStrLn stderr $ "Start time : " ++ show startTime
     case readLazyK srcFile lazySrc of
         Right a -> do
             deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
-            endTime <- getCPUTime
-            onlyV ioInf $ do
-                let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
-                hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
 

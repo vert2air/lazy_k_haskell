@@ -3,6 +3,7 @@ module LazyKParts where
 import Data.Char (chr, ord)
 import Data.Default (Default(..))
 import Numeric (showHex)
+import System.CPUTime (getCPUTime)
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
@@ -23,9 +24,13 @@ deconsLoop pd countdown ioInf expr = do
     case num of
         Just n
             | n < 256 -> do
-                onlyV ioInf'' $
+                onlyV ioInf'' $ do
+                    curTime <- getCPUTime
+                    let sec = fromIntegral (curTime - startCPUTime ioInf)
+                                                        / 1e12 :: Double
                     hPutStrLn stderr $
-                        show n ++ "(=0x" ++ showHex n ")--'" ++ [chr n] ++ "'"
+                        show n ++ "(=0x" ++ showHex n ")--'" ++ [chr n]
+                         ++ "'  "++ show sec ++ " sec"
                 putChar $ chr n
                 hFlush stdout
                 deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
@@ -115,11 +120,11 @@ reductInput ioInf d expr = do
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
         -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
-pollInput ix (IoInfo _ input _ pd sgn) = do
-    IoInfo eof' add _ _ _ <- getNchar [] $ ix - length input + 1
+pollInput ix (IoInfo _ input _ pd sgn start) = do
+    IoInfo eof' add _ _ _ _ <- getNchar [] $ ix - length input + 1
     -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
     -- putStrLn $ "                " ++ show (input ++ add)
-    return $ IoInfo eof' (input ++ add) False pd sgn
+    return $ IoInfo eof' (input ++ add) False pd sgn start
 
 -- | pollInput の補助関数。指定byte数を取得する。
 --
@@ -129,10 +134,10 @@ getNchar :: [Int]     -- ^ pollInputでここまでに受信したbyte列。
         -> Int        -- ^ 取得すべき残りのbyte数。
         -> IO IoInfo
 getNchar acc n
-    | n <= 0 = return $ IoInfo False acc False def 'λ'
+    | n <= 0 = return $ IoInfo False acc False def 'λ' 0
     | otherwise = do
         eof <- isEOF
-        if eof then return $ IoInfo True acc False def 'λ'
+        if eof then return $ IoInfo True acc False def 'λ' 0
               else do
                   c <- getChar  -- 実際の読込み。それまではblocking。
                   getNchar (acc ++ [ord c]) (n - 1)

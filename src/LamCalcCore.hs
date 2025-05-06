@@ -64,10 +64,11 @@ data IoInfo = IoInfo
     , optV :: !Bool      -- ^ 起動時に-vオプションが指定されているか。
     , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
     , lamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
+    , startCPUTime :: !Integer -- ^ 開始時の getCPUTime
     } deriving (Eq, Ord, Show)
 
 instance Default IoInfo where
-    def = IoInfo False [] False def 'λ'
+    def = IoInfo False [] False def 'λ' 0
 
 instance Arbitrary IoInfo where
     arbitrary = IoInfo
@@ -76,6 +77,7 @@ instance Arbitrary IoInfo where
         <*> arbitrary
         <*> arbitrary
         <*> oneof [pure 'λ', pure '\\']
+        <*> arbitrary
 
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
@@ -576,7 +578,7 @@ reduct ioInf d              (App _ (L _ le) e) = case once of
     _         -> incPd 1 . forceProg . incPds d $ pure once
   where
     once = comple (subst 1 e) le
-reduct ioInf@(IoInfo eof input _ _ _) d e@(App s (In ix) oprd)
+reduct ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
         forceProg $ reduct ioInf d $ App s (buildInput ioInf ix) oprd
@@ -592,7 +594,7 @@ reduct ioInf            d e@(App _ x y) = case reduct ioInf d x of
     RedProg d' _ e'@(L _ _) -> forceProg $ reduct ioInf d' (e' %: y)
     -- そうでなければ、一旦行けるところまで行ったので、戻る。
     x'                ->  (%:) <$> x' <*> pure y
-reduct ioInf@(IoInfo eof input _ _ _) d e@(In ix)
+reduct ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
@@ -604,7 +606,7 @@ reduct _ d e            = incPds d $ return e     -- V and Nm
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta簡約に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (IoInfo eof input _ _ _) ix
+buildInput (IoInfo eof input _ _ _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
     | otherwise = error "buildInput: called under unexpected condition"
