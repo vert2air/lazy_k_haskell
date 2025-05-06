@@ -2,6 +2,7 @@ module LazyKParts where
 
 import Data.Char (chr, ord)
 import Data.Default (Default(..))
+import Numeric (showHex)
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
@@ -23,7 +24,8 @@ deconsLoop pd countdown ioInf expr = do
         Just n
             | n < 256 -> do
                 onlyV ioInf'' $
-                    hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
+                    hPutStrLn stderr $
+                        show n ++ "(=0x" ++ showHex n ")--'" ++ [chr n] ++ "'"
                 putChar $ chr n
                 hFlush stdout
                 deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
