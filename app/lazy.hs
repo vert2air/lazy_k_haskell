@@ -13,6 +13,7 @@ import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
 import System.CPUTime (getCPUTime)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
+import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
 import LazyKParts (deconsLoop, onlyV)
@@ -26,8 +27,9 @@ options :: [OptDescr Flag]
 options =
     [ Option [] ["max"] (ReqArg (MaxOut . readInt) "COUNT") "Max output count"
     , Option ['v'] [] (NoArg (Verbose True)) "Verbose output"
-    , Option ['d'] [] (ReqArg (DotFreq . ProgDot . map readInt . splitOn ",")
-                       "d0,d1") "Progress dot frequency"
+    , Option ['d'] [] (ReqArg
+            (DotFreq . ProgDot . map readInt . splitOn "," . filter (/='_'))
+                                "d0,d1") "Progress dot frequency"
     ]
 
 -- | 文字列から、10進数取り出し
@@ -68,6 +70,7 @@ main = do
     -- /c/Windows/System32/chcp.com 65001
     (opts, [srcFile]) <- compileOpts =<< getArgs
     -- putStrLn . show $ opts
+    startTime <- getCPUTime
     let for = flip map
         forAny = flip any
         maxOut = maximum . (Nothing:) $ for opts $ \op -> case op of
@@ -80,22 +83,23 @@ main = do
                         (DotFreq d) -> d
                         _ -> ProgDot [0, 0]
         -- lazyの出力にラムダ記号は含まれない。適当にdefault値を設定しておく。
-        ioInf = IoInfo False [] verbose dotFreq 'λ'
-    lazy ioInf maxOut srcFile
-
-lazy :: IoInfo -> Maybe Int -> String -> IO ()
-lazy ioInf maxOut srcFile = do
-    lazySrc <- readFile srcFile
-    startTime <- getCPUTime
+        ioInf = IoInfo False [] verbose dotFreq 'λ' startTime
     onlyV ioInf $
         hPutStrLn stderr $ "Start time : " ++ show startTime
+    exitCode <- lazy ioInf maxOut srcFile
+    endTime <- getCPUTime
+    onlyV ioInf $ do
+        let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
+        hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
+    exitWith exitCode
+
+lazy :: IoInfo -> Maybe Int -> String -> IO ExitCode
+lazy ioInf maxOut srcFile = do
+    lazySrc <- readFile srcFile
     case readLazyK srcFile lazySrc of
         Right a -> do
             deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
-            endTime <- getCPUTime
-            onlyV ioInf $ do
-                let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
-                hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
+            return $ ExitFailure 1
 

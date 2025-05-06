@@ -2,6 +2,9 @@ module LazyKParts where
 
 import Data.Char (chr, ord)
 import Data.Default (Default(..))
+import Numeric (showHex)
+import System.CPUTime (getCPUTime)
+import System.Exit (ExitCode(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
@@ -13,8 +16,8 @@ deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
         -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
         -> IoInfo       -- ^ 入力情報と出力関係のオプション
         -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
-        -> IO ()
-deconsLoop _  (Just 0)  _     _    = return ()
+        -> IO ExitCode      -- ^ プログラムの終了コード
+deconsLoop _  (Just 0)  _     _    = return ExitSuccess
 deconsLoop pd countdown ioInf expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
     (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
@@ -22,15 +25,24 @@ deconsLoop pd countdown ioInf expr = do
     case num of
         Just n
             | n < 256 -> do
-                onlyV ioInf'' $
-                    hPutStrLn stderr $ show n ++ "(='" ++ [chr n] ++ "')"
+                onlyV ioInf'' $ do
+                    curTime <- getCPUTime
+                    let sec = fromIntegral (curTime - startCPUTime ioInf)
+                                                        / 1e12 :: Double
+                    hPutStrLn stderr $
+                        show n ++ "(=0x" ++ showHex n ")--'" ++ [chr n]
+                         ++ "'  "++ show sec ++ " sec"
                 putChar $ chr n
                 hFlush stdout
                 deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
             | otherwise -> do
                 onlyV ioInf'' $
                     hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
-        _ -> hPutStrLn stderr $ "car is not number"
+                return $ if n == 256 then ExitSuccess
+                                     else ExitFailure (n - 256)
+        _ -> do
+            hPutStrLn stderr $ "car is not number"
+            return $ ExitFailure 1
 
 -- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
 decons :: IoInfo     -- ^ 入力情報と出力関係のオプション
@@ -113,24 +125,24 @@ reductInput ioInf d expr = do
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
         -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
-pollInput ix (IoInfo _ input _ pd sgn) = do
-    IoInfo eof' add _ _ _ <- getNchar [] $ ix - length input + 1
-    -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
-    -- putStrLn $ "                " ++ show (input ++ add)
-    return $ IoInfo eof' (input ++ add) False pd sgn
+pollInput ix ioInf = do
+    let lack = ix - length (inHist ioInf) + 1
+    (eof', add) <- getNchar [] lack
+    let newHist = if eof' && length add < lack
+        then inHist ioInf ++ add ++ take (lack - length add) [256, 256..]
+        else inHist ioInf ++ add
+    return $ ioInf { inEof = eof', inHist = newHist }
 
 -- | pollInput の補助関数。指定byte数を取得する。
---
--- 入力に関するフィールド以外は呼び出し側で上書きするので、
--- ここではdefault値等を設定しておけばよ良い。
-getNchar :: [Int]     -- ^ pollInputでここまでに受信したbyte列。
+-- inputが EOF に達したかの情報も合わせて返却する。
+getNchar :: [Int]     -- ^ getNcharでここまでに受信したbyte列。
         -> Int        -- ^ 取得すべき残りのbyte数。
-        -> IO IoInfo
+        -> IO (Bool, [Int])
 getNchar acc n
-    | n <= 0 = return $ IoInfo False acc False def 'λ'
+    | n <= 0 = return (False, acc)
     | otherwise = do
         eof <- isEOF
-        if eof then return $ IoInfo True acc False def 'λ'
+        if eof then return (True, acc)
               else do
                   c <- getChar  -- 実際の読込み。それまではblocking。
                   getNchar (acc ++ [ord c]) (n - 1)
