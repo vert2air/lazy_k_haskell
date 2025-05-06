@@ -120,12 +120,13 @@ reductInput ioInf d expr = do
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
         -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
--- pollInput ix (IoInfo _ input _ pd sgn start) = do
 pollInput ix ioInf = do
-    (eof', add) <- getNchar [] $ ix - length (inHist ioInf) + 1
-    -- putStrLn $ "------> getNchar !! " ++ show (length input) ++ ".. = " ++ show add
-    -- putStrLn $ "                " ++ show (input ++ add)
-    return $ ioInf { inEof = eof', inHist = inHist ioInf ++ add }
+    let lack = ix - length (inHist ioInf) + 1
+    (eof', add) <- getNchar [] lack
+    let newHist = if eof' && length add < lack
+        then inHist ioInf ++ add ++ take (lack - length add) [256, 256..]
+        else inHist ioInf ++ add
+    return $ ioInf { inEof = eof', inHist = newHist }
 
 -- | pollInput の補助関数。指定byte数を取得する。
 -- inputが EOF に達したかの情報も合わせて返却する。
