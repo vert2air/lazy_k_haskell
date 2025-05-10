@@ -37,7 +37,7 @@ options =
     , Option ['s'] ["policy-single-use"] (NoArg (ArgPolicy PK_single_use)) "Assign unique name for each lambda"
     , Option ['p'] ["pool"] (ReqArg ArgPool "var. names") "Pool of named var. (default='xyzabcd...')"
     , Option ['s'] ["lambda-sign"] (ReqArg (ArgLamSign . (!!0)) "char") "Abstraction sign (default=Greek lambda)"
-    , Option ['e'] ["expr"] (ReqArg ArgExpr "Expression") "Lambda expression to pprint"
+    , Option ['e'] ["expr"] (ReqArg ArgExpr "Expression") "Lambda expression to operate"
 
     , Option ['L'] ["to-lambda"]   (NoArg ArgToLambda)  "Command to lambda"
     , Option ['r'] ["reduction"]   (NoArg ArgReduction) "Command to reduct infinitely"
@@ -55,12 +55,11 @@ compileOpts args = do
         (o, n, []) -> return (o, n)
         (_, _, errs) -> ioError $ userError
                                 $ concat errs ++ usageInfo header options
-  where header = "Usage: pprint [OPTION...] {-e expr|FILE}"
+  where header = "Usage: lamcalc [OPTION...] {-e expr|FILE}"
 
 main :: IO ()
 main = do
     (opts, srcFiles) <- compileOpts =<< getArgs
-    -- putStrLn . show $ opts
     let for = flip map
         argStyle = maximum . (Nothing:) $ for opts $ \op -> case op of
                         (ArgStyleUnlam e) -> Just e
