@@ -8,8 +8,8 @@ import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
 import System.Environment (getArgs, lookupEnv)
 
 import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..)
-                    , readLazyK, toNamedString, abstElim
-                    , reductInf, toLambda)
+                    , RedResult(..), readLazyK, toNamedString, abstElim
+                    , reductInf, red_1, toLambda)
 import LazyKParts (toCcStyle, toIotaStyle, toJotStyle)
 
 data Flag = ArgExpr String
@@ -101,7 +101,9 @@ main = do
             ArgToLambda -> toLambda acc
             ArgReduction -> reductInf acc
             ArgAbstElim -> maybe acc id $ abstElim acc
-            -- ArgReduct1
+            ArgReduct1   -> case red_1 def def acc of
+                                RedStop _ _ s -> s
+                                RedProg _ _ p -> p
             ArgStyleCC   -> toCcStyle acc
             ArgStyleIota -> toIotaStyle acc
             ArgStyleJot  -> toJotStyle acc
