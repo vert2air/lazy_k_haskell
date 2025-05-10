@@ -68,7 +68,7 @@ main = do
     let toCat = fromRight (error "Illegal express") . readLazyK "" $ target
     envRawSign <- lookupEnv "LAMBDA_SIGN"
     let envSign = case envRawSign of
-            Nothing -> envSign
+            Nothing -> Nothing
             Just [a] -> Just a   -- 抽象化記号は 1文字限定
             _ -> error "Error : Env. var. LAMBDA_SIGN has multi-charactors"
     let finalSign = maybe (nmLamSign def) id $ argSign `firstJust` envSign
