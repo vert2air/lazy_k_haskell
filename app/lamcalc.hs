@@ -10,6 +10,7 @@ import System.Environment (getArgs, lookupEnv)
 import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..)
                     , readLazyK, toNamedString, abstElim
                     , reductInf, toLambda)
+import LazyKParts (toCcStyle, toIotaStyle, toJotStyle)
 
 data Flag = ArgExpr String
             | ArgStyleUnlam Bool
@@ -101,9 +102,9 @@ main = do
             ArgReduction -> reductInf acc
             ArgAbstElim -> maybe acc id $ abstElim acc
             -- ArgReduct1
-            -- ArgStyleCC
-            -- ArgStyleIota
-            -- ArgStyleJot
+            ArgStyleCC   -> toCcStyle acc
+            ArgStyleIota -> toIotaStyle acc
+            ArgStyleJot  -> toJotStyle acc
             _ -> acc
     let Stringifying ret _ _ = toNamedString mng oped
     putStrLn ret

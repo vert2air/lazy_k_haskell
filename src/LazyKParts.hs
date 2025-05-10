@@ -6,9 +6,11 @@ import Numeric (showHex)
 import System.CPUTime (getCPUTime)
 import System.Exit (ExitCode(..))
 import System.IO (isEOF, hFlush, hPutStr, hPutStrLn, stderr, stdout)
+import Text.Parsec ((<|>), Parsec, char, many1, oneOf, parse)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
-                , reduct, forceProg, isPdMature, incPd, clearPd, toNamedString)
+                , (%:), la, reduct, forceProg, isPdMature, incPd, clearPd
+                , toNamedString)
 import LamCalcParts (getChNum)
 
 -- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
@@ -169,3 +171,77 @@ onlyV ioInf act = if optV ioInf
         act
         hFlush stderr
     else return ()
+
+jotI, jotK, jotS :: String
+jotI = "11111111100000"
+jotK = "11100"
+jotS = "11111000"
+
+-- | CCスタイルへの変換
+--
+-- 変換の対象は、IotaとJotスタイルの部分のみ
+toCcStyle :: LamExpr -> LamExpr
+toCcStyle (L _ lexp) = la $ toCcStyle lexp
+toCcStyle (App _ (Nm "iota") (Nm "iota")) = Nm "I"
+toCcStyle (App _ (Nm "iota")
+            (App _ (Nm "iota")
+                (App _ (Nm "iota") (Nm "iota")))) = Nm "K"
+toCcStyle (App _ (Nm "iota")
+            (App _ (Nm "iota")
+                (App _ (Nm "iota")
+                    (App _ (Nm "iota") (Nm "iota"))))) = Nm "S"
+toCcStyle (App _ x y) = toCcStyle x %: toCcStyle y
+toCcStyle (Jot _ j) = jotToCcStyle j
+toCcStyle expr = expr
+
+jotToCcStyle :: String -> LamExpr
+jotToCcStyle jot = case parse jexprs "jotToCcStyle" $ jotToCcStr jot of
+    Left _ -> Jot (length jot) jot
+    Right e -> e
+
+jexprs, jexpr :: Parsec String u LamExpr
+
+jexprs = foldl1 (%:) <$> many1 jexpr
+
+jexpr = Nm . (:[]) <$> oneOf "SKI"
+    <|> char '1' *> return (%:) <*> jexpr <*> jexpr
+
+jotToCcStr :: String -> String
+jotToCcStr jot = case jot of
+    '1':('1':('1':('1':('1':('1':('1':('1':('1':
+            ('0':('0':('0':('0':('0':x))))))))))))) -> ('I':) $ jotToCcStr x
+    '1':('1':('1':('0':('0':x))))                   -> ('K':) $ jotToCcStr x
+    '1':('1':('1':('1':('1':('0':('0':('0':x))))))) -> ('S':) $ jotToCcStr x
+    '1':y -> '1' : jotToCcStr y
+    x:y -> x : jotToCcStr y  -- Errorだが、error処理はparse側に押し付ける
+    "" -> ""
+
+-- | Iotaスタイルへの変換
+--
+-- 変換するのは、あくまで、S, K, I のみ。
+-- Jotスタイルや、変数、入力promise等は、変更しない。
+toIotaStyle :: LamExpr -> LamExpr
+toIotaStyle (L _ lexp) = la $ toIotaStyle lexp
+toIotaStyle (App _ x y) = toIotaStyle x %: toIotaStyle y
+toIotaStyle (Nm "I") = Nm "iota" %: Nm "iota"
+toIotaStyle (Nm "K") = Nm "iota" %: (Nm "iota" %: (Nm "iota" %: Nm "iota"))
+toIotaStyle (Nm "S") = Nm "iota" %: (Nm "iota" %: (Nm "iota" %:
+                                                   (Nm "iota" %: Nm "iota")))
+toIotaStyle expr = expr
+
+-- | Jotスタイルへの変換
+--
+-- 変換するのは、あくまで、S, K, I のみ。
+-- Iotaスタイルや、変数、入力promise等は、変更しない。
+toJotStyle :: LamExpr -> LamExpr
+toJotStyle (L _ lexp) = la $ toJotStyle lexp
+toJotStyle (App _ x y) = case (jotX, jotY) of
+    (Jot lx jx, Jot ly jy) -> Jot (1 + lx + ly) $ '1':(jx ++ jy)
+    _ -> jotX %: jotY
+  where
+    jotX = toJotStyle x
+    jotY = toJotStyle y
+toJotStyle (Nm "I") = Jot (length jotI) jotI
+toJotStyle (Nm "K") = Jot (length jotK) jotK
+toJotStyle (Nm "S") = Jot (length jotS) jotS
+toJotStyle expr = expr
