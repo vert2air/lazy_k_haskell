@@ -7,14 +7,23 @@ import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
                               getOpt, usageInfo)
 import System.Environment (getArgs, lookupEnv)
 
-import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..),
-                    readLazyK, toNamedString)
+import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..)
+                    , readLazyK, toNamedString, abstElim
+                    , reductInf, toLambda)
 
 data Flag = ArgExpr String
             | ArgStyleUnlam Bool
             | ArgPolicy PolicyKind
             | ArgPool String
             | ArgLamSign Char
+
+            | ArgToLambda
+            | ArgReduction
+            | ArgAbstElim
+            | ArgReduct1
+            | ArgStyleCC
+            | ArgStyleIota
+            | ArgStyleJot deriving (Show)
 
 -- | コマンドラインオプションの定義
 options :: [OptDescr Flag]
@@ -28,6 +37,14 @@ options =
     , Option ['p'] ["pool"] (ReqArg ArgPool "var. names") "Pool of named var. (default='xyzabcd...')"
     , Option ['s'] ["lambda-sign"] (ReqArg (ArgLamSign . (!!0)) "char") "Abstraction sign (default=Greek lambda)"
     , Option ['e'] ["expr"] (ReqArg ArgExpr "Expression") "Lambda expression to pprint"
+
+    , Option ['L'] ["to-lambda"]   (NoArg ArgToLambda)  "Command to lambda"
+    , Option ['r'] ["reduction"]   (NoArg ArgReduction) "Command to reduct infinitely"
+    , Option ['a'] ["abst-elim"]   (NoArg ArgAbstElim)  "Command to abst. elim."
+    , Option ['1'] ["reduction_1"] (NoArg ArgReduct1)   "Command to reduct Just 1 time"
+    , Option ['C'] ["style-cc"]    (NoArg ArgStyleCC)   "Command to CC style"
+    , Option ['I'] ["style-iota"]  (NoArg ArgStyleIota) "Command to Iota style"
+    , Option ['J'] ["style-jot"]   (NoArg ArgStyleJot)  "Command to Jot style"
     ]
 
 -- | コマンドラインオプションの解析
@@ -78,5 +95,15 @@ main = do
                   , nmUnlamStyle = maybe (nmUnlamStyle def) id argStyle
                   , nmLamSign = finalSign
                   }
-    let Stringifying ret _ _ = toNamedString mng toCat
+    let oped = foldl aux toCat opts
+        aux acc op = case op of
+            ArgToLambda -> toLambda acc
+            ArgReduction -> reductInf acc
+            ArgAbstElim -> maybe acc id $ abstElim acc
+            -- ArgReduct1
+            -- ArgStyleCC
+            -- ArgStyleIota
+            -- ArgStyleJot
+            _ -> acc
+    let Stringifying ret _ _ = toNamedString mng oped
     putStrLn ret
