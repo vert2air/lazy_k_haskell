@@ -602,6 +602,45 @@ reduct ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
     | otherwise = RedStop d ix e
 reduct _ d e            = incPds d $ return e     -- V and Nm
 
+{- | Beta/Eta簡約の実行 (入力の遅延評価対応)
+
+ 入力が遅延評価される前提で、可能な範囲でbeta簡約又はeta簡約を1回だけ行う。
+ 入力プロミスを評価する必要が出た時点で、評価を停止し、
+ 返り値に何byte目の入力が必要かの情報を含める。
+ ProgDot は更新するが、mature になっても処理は継続する。
+ -}
+red_1 :: IoInfo
+        -> ProgDot  -- ^ beta簡約を実行した回数。
+        -> LamExpr
+        -> RedResult LamExpr
+-- eta簡約
+red_1 _ioInf d (L _ (App _ fun (V 1)))
+    | not (hasVar 1 fun) =
+        RedProg d (-1) $ comple (shallow 1) fun
+-- 以降は、beta簡約
+red_1 ioInf d              (L _ le)    = la <$> red_1 ioInf d le
+red_1 _ioInf d             (App _ (L _ le) e) =
+    incPd 1 . RedProg d (-1) $ comple (subst 1 e) le
+red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
+    -- 現時点で展開可能な入力があるので、それを使って続行。
+    | eof || ix < length input =
+        forceProg $ red_1 ioInf d $ App s (buildInput ioInf ix) oprd
+    -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
+    | otherwise = RedStop d ix e
+red_1 ioInf            d e@(App _ x y) = case red_1 ioInf d x of
+    RedStop d' i _
+        | isPdMature 1 ioInf d' -> RedStop d' i e
+        | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
+        | otherwise  -> RedStop def i (x %:) <*> red_1 ioInf d' y
+    x'                ->  (%:) <$> x' <*> pure y
+red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
+    -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
+    -- In がリストに変わるので、RedProg を返す。
+    | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
+    -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
+    | otherwise = RedStop d ix e
+red_1 _ d e            = incPds d $ return e     -- V and Nm
+
 -- | Inputプロミスを置換える実リストを生成
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta簡約に必要なinputのインデックス
