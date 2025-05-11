@@ -1,3 +1,8 @@
+{- |
+  Module      : LazyKParts
+  Description : Lazy K特有の処理。IO周りの処理。
+-}
+
 module LazyKParts where
 
 import Data.Char (chr, ord)

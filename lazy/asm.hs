@@ -8,6 +8,9 @@ import LamCalcParts (if_then_else
             , lc_nil, cons, car, cdr, is_eq_LF, is_eq_r2
             , y_comb, shortChNum, readStr)
 
+{- |
+  Description : Lazy K ファイルの作成のサンプルコード
+-}
 getPutLine :: LamExpr
 getPutLine =
     y_comb %:
@@ -108,10 +111,6 @@ asm input = do
     -- takeStringified . toNamedString def . comple abstElim $ input
     takeStringified . toNamedString def . comple abstElim . comple abstElim $ input
 
--- echo add.abst_elim.toCC
--- echo eq.abst_elim.toCC
--- echo eq_r2.abst_elim.toCC
--- echo sum_to_0.abst_elim.toCC
 main :: IO ()
 main = do
     -- asm getPutLine

@@ -1,3 +1,9 @@
+{- |
+  Module      : LamCalcParts
+  Description : ラムダ計算で頻出のデータや処理。
+                Lazy Kコード作成時のパーツ群
+-}
+
 module LamCalcParts where
 
 import           Data.Default (Default(..))
@@ -112,6 +118,7 @@ lc_not = la $ V 1 %: lc_false %: lc_true
 readStr :: String -> LamExpr
 readStr = fromRight (error "internal") . readLazyK ""
 
+-- | Church encode の自然数 (0, 1, 10=(ASCIIコードの LF), 256)
 ch_0, ch_1, ch_LF, ch_256 :: LamExpr
 ch_0 = readStr $ shortChNum !! 0
 ch_1 = readStr $ shortChNum !! 1
@@ -131,6 +138,7 @@ is_eq = la . la $ (
         %: (is_zero %: (cn_minus %: V 2 %: V 1))
     )
 
+-- | Scott encode のリスト構造データ
 lc_nil, cons, car, cdr, is_nil :: LamExpr
 lc_nil = la . la $ V 1
 cons = la . la . la $ V 1 %: V 3 %: V 2
@@ -139,11 +147,11 @@ cdr = la $ V 1 %: lc_false
 -- | nilかconsかを判定するコード。
 is_nil = la $ (V 1) %: (la . la . la $ lc_false) %: lc_true
 
-{- 引数が Church数で ASCIIコードの LF (=0x0a) であるかを判定
---
--- 結局遅いのは、引き算。引き算をする代わりに、テーブルを持つ。
--- ASCIIコードの話なので、入力終了の 256 を含めても 257個のテーブルで済む。
--- is_eq_r2 と比べても劇的に速い。その代わりに、Lazy Kコードが大きくなる。
+{- | 引数が Church数で ASCIIコードの LF (=0x0a) であるかを判定
+
+  結局遅いのは、引き算。引き算をする代わりに、テーブルを持つ。
+  ASCIIコードの話なので、入力終了の 256 を含めても 257個のテーブルで済む。
+  is_eq_r2 と比べても劇的に速い。その代わりに、Lazy Kコードが大きくなる。
 -}
 is_eq_LF :: LamExpr
 is_eq_LF = la . (car %:) . (%:) ((V 1) %: cdr) $
@@ -181,6 +189,7 @@ getChNum (L _ (L _ llexp)) = countF llexp
 getChNum (L _ (V 1)) = Just 1
 getChNum _ = Nothing
 
+-- | コンパクトにChurch encodeした自然数 (0～256)
 shortChNum :: [String]
 shortChNum = [
       "`ki"                                                              --   0

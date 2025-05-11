@@ -1,10 +1,12 @@
 {-# LANGUAGE TupleSections #-}
 
+{- |
+  Module      : LamCalcCore
+  Description : Lazy K と ラムダ式 のデータ構造と処理のcore部分
+-}
+
 module LamCalcCore where
 
-import Debug.Trace (trace)
--- trace :: String -> a -> a
--- trace _ x = x
 import           Data.Default (Default(..))
 import           Data.Char (isDigit, isSpace, toUpper, toLower)
 import           Data.List (elemIndex)
@@ -79,6 +81,9 @@ instance Arbitrary IoInfo where
         <*> oneof [pure 'λ', pure '\\']
         <*> arbitrary
 
+-- ラムダ式の長さを取得
+--
+-- Unlambdaスタイルで表示した時の文字列長を基準に算出。
 lamSize :: LamExpr -> Int
 lamSize (App s _ _) = s
 lamSize (L s _)     = s
@@ -368,6 +373,7 @@ getFreeVars (In ix) _ = (S.empty, S.empty, S.singleton ix)
 getFreeVars _       _ = (S.empty, S.empty, S.empty)
 
 -- | Lazy Kソースを含めたラムダ式の文字列の読み込み
+--
 -- λ記号は、'λ'と'\\'の両方を許容する。
 -- De Bruijn index の変数は、'_'+数字 (1以上) で表示されている。
 -- 入力プロミスは、'<'+数字 (0以上) で表示されている。
@@ -446,10 +452,9 @@ abst' = try ( (map (\a -> [a])) <$>
         <* char '.' <* spaces ))
     <|> return [""]
 
-{-
- - Transform to Lambda calcuration Expression
- - Resolve any reference by names
- -}
+-- | ラムダ式中のLazy Kの組み込み関数をラムダ式で置換
+--
+-- 自由変数や入力promise等は、そのまま変更しない。
 toLambda :: LamExpr -> LamExpr
 toLambda v@(V _)     = v
 toLambda (Nm "I")    = ccI
