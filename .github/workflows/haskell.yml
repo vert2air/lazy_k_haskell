@@ -2,7 +2,7 @@ name: Haskell CI
 
 on:
   push:
-    branches: [ "main", "feature_test" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
