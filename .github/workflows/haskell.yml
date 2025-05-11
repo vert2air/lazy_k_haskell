@@ -37,7 +37,11 @@ jobs:
       run: |
         cabal update
         cabal build --only-dependencies --enable-tests --enable-benchmarks
+        which ghc
     - name: Build
       run: cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
       run: cabal test all
+    - name: Run doctests
+      run: cabal install doctest --ignore-project --overwrite-policy=always && cabal build && cabal repl --build-depends=QuickCheck --build-depends=template-haskell --with-compiler=doctest --repl-options='-w -Wdefault'
+

@@ -1,0 +1,27 @@
+#
+# input の 1 byte目と 2 byte目を加算して、出力する。
+#
+# $ echo -ne '\x07\x30' | cabal run lazy -- lazy/add_A_B.lazy | od -c -tx1
+# 0000000   7
+#          37
+# 0000001
+#
+
+S
+  (S
+    (K
+      (S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK))
+    )
+    (S
+      (S(K(S(KS)(S(K(S(KS)))(S(KK)))))(SI(KK)))
+      (S(K(SI(KK)))(SI(K(KI))))
+    )
+  )
+  (K
+    (S
+      (S(KS)(S(KK)(S(KS)(S(K(SI))K))))
+      (KK)
+      (SII(SII(S(S(KS)K)I)))
+      K
+    )
+  )

@@ -1,0 +1,10 @@
+#
+# inputの各byteを合計し、0 が出てきたところで、1 byteの値として出力する。
+#
+# $ echo -ne '\x05\x18\x18\x00' | cabal run lazy -- lazy/sum_to_0.lazy | od -c -tx1
+# 0000000   5
+#          35
+# 0000001
+#
+
+S(K(S(S(S(KS)K)(K(SII)))(S(S(KS)K)(K(SII)))(S(K(S(S(S(KI)(S(K(S(SI(K(K(KI))))(KK)))(S(K(SI(KK)))(SI(K(KI))))))(S(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)))(SI(KK)))(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(SII(SII(S(S(KS)K)I)))K))))))(S(S(KS)K)(K(S(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)))(S(S(K(S(KS)(S(K(S(KS)))(S(KK)))))(SI(KK)))(S(K(SI(KK)))(SI(K(KI))))))(S(K(SI(K(KI))))(SI(K(KI))))))))))(S(S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)(KI))
