@@ -1,8 +1,105 @@
 module LamCalcParts where
 
-import Data.Either (fromRight)
+import           Data.Default (Default(..))
+import           Data.Either (fromRight)
+import qualified Data.Map as M (Map, empty, singleton)
+import Data.Map.Merge.Lazy (merge, preserveMissing, zipWithMatched)
 
 import LamCalcCore (LamExpr(..), la, (%:), readLazyK)
+
+data Stat = Stat
+    { maxDepth :: !Int
+    , maxLamDepth :: !Int -- Lambda抽象のみの最大の深さ
+    , maxAppDepth :: !Int -- Appのみの最大の深さ
+    , cnt_lambda :: !Int
+    , cnt_var :: !Int     -- de Bruijn Index
+    , cnt_I :: !Int
+    , cnt_K :: !Int
+    , cnt_S :: !Int
+    , cnt_Iota :: !Int
+    , cnt_Jot_0 :: !Int
+    , cnt_Jot_1 :: !Int
+    , freeVar_index :: M.Map Int  Int
+    , freeVar_named :: M.Map Char Int
+    , input_promise :: M.Map Int  Int
+    } deriving (Show)
+
+instance Default Stat where
+    def = Stat
+        { maxDepth = 0
+        , maxLamDepth = 0
+        , maxAppDepth = 0
+        , cnt_lambda = 0
+        , cnt_var = 0
+        , cnt_I = 0
+        , cnt_K = 0
+        , cnt_S = 0
+        , cnt_Iota = 0
+        , cnt_Jot_0 = 0
+        , cnt_Jot_1 = 0
+        , freeVar_index = M.empty
+        , freeVar_named = M.empty
+        , input_promise = M.empty
+        }
+
+(%) :: Stat -> Stat -> Stat
+a % b = Stat
+    { maxDepth      = max (maxDepth    a) (maxDepth    b)
+    , maxLamDepth   = max (maxLamDepth a) (maxLamDepth b)
+    , maxAppDepth   = max (maxAppDepth a) (maxAppDepth b)
+    , cnt_lambda    = cnt_lambda a + cnt_lambda b
+    , cnt_var       = cnt_var    a + cnt_var    b
+    , cnt_I         = cnt_I      a + cnt_I      b
+    , cnt_K         = cnt_K      a + cnt_K      b
+    , cnt_S         = cnt_S      a + cnt_S      b
+    , cnt_Iota      = cnt_Iota   a + cnt_Iota   b
+    , cnt_Jot_0     = cnt_Jot_0  a + cnt_Jot_0  b
+    , cnt_Jot_1     = cnt_Jot_1  a + cnt_Jot_1  b 
+    , freeVar_index = freeVar_index a `addEach` freeVar_index b
+    , freeVar_named = freeVar_named a `addEach` freeVar_named b
+    , input_promise = input_promise a `addEach` input_promise b
+    }
+
+-- | 補助関数(内部用) : M.Map k Int で、キー毎に値を加算
+addEach :: (Ord k) => M.Map k Int -> M.Map k Int -> M.Map k Int
+ma `addEach` mb = merge preserveMissing preserveMissing
+                    (zipWithMatched $ \ _key a b -> a + b) ma mb
+
+-- | 補助関数(内部用) : 抽象化の深さを1増加
+incAbst :: Stat -> Stat
+incAbst st = st
+    { maxDepth    = maxDepth    st + 1
+    , maxLamDepth = maxLamDepth st + 1
+    , cnt_lambda  = cnt_lambda  st + 1
+    }
+
+-- | 補助関数(内部用) : 関数適用の深さを1増加
+incApp :: Stat -> Stat
+incApp st = st
+    { maxDepth    = maxDepth    st + 1
+    , maxAppDepth = maxAppDepth st + 1
+    }
+
+-- | ラムダ式の統計情報を取得
+--
+-- Intは再帰用で使う。外部からの呼び出し時は 0 を設定すること。
+stat :: Int -> LamExpr -> Stat
+stat lDep (V idx)
+    | idx <= lDep     = def { cnt_var = 1 }
+    | otherwise       = def { freeVar_index = M.singleton (idx - lDep) 1 }
+stat lDep (L _ lexp)  = incAbst $ stat (lDep + 1) lexp
+stat lDep (App _ x y) = incApp  $ stat lDep x % stat lDep y
+stat _    (Nm "I")    = def { cnt_I = 1 }
+stat _    (Nm "K")    = def { cnt_K = 1 }
+stat _    (Nm "S")    = def { cnt_S = 1 }
+stat _    (Nm "iota") = def { cnt_Iota = 1 }
+stat _    (Nm n)      = def { freeVar_named = M.singleton (n !! 0) 1 }
+stat _    (Jot _ jot) = def { cnt_Jot_0 = s0, cnt_Jot_1 = s1 }
+  where
+    aux (c0, c1) '0' = (c0 + 1, c1)
+    aux (c0, c1) _   = (c0    , c1 + 1)
+    (s0, s1) = foldl aux (0, 0) jot
+stat _    (In idx)    = def { input_promise = M.singleton idx 1 }
 
 lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not :: LamExpr
 lc_true = la . la $ V 2
