@@ -132,6 +132,24 @@ careIoInfo f ioInf d expr = do
                 ioInf' <- pollInput ix ioInf
                 careIoInfo f ioInf' pd expr    -- 元のexprを使用。
 
+-- | 変化しなくなるまで、指定された関数の適用を繰り返す (遅延入力対応)
+untilStopInput :: (IoInfo -> ProgDot -> e -> RedResult e)
+                -> IoInfo   -- ^ 入力情報と出力関係のオプション
+                -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+                -> e   -- ^ 簡約対象のラムダ式
+                -> IO (e, ProgDot, IoInfo)
+untilStopInput f ioInf pd expr = do
+    ret <- careIoInfo f ioInf pd expr
+    case ret of
+        (RedProg pd' _  expr', ioInf') -> do
+            -- putStrLn ("Prog: " ++ show ret)
+            untilStopInput f ioInf' pd' expr'
+        (RedStop pd' ix _   , ioInf')
+            | isPdMature 1 ioInf' pd' ->
+                error $ "Not Chuch Number" ++ show pd'
+            | ix < 0 -> return (expr, pd', ioInf')
+            | otherwise -> untilStopInput f ioInf' pd' expr
+
 -- | 標準入力から指定番目まで取得 (blocking処理)
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
@@ -157,24 +175,6 @@ getNchar acc n
               else do
                   c <- getChar  -- 実際の読込み。それまではblocking。
                   getNchar (acc ++ [ord c]) (n - 1)
-
--- | expr に可能な限りbeta/eta簡約を再帰実行 (遅延入力対応)
-untilStopInput :: (IoInfo -> ProgDot -> e -> RedResult e)
-                -> IoInfo   -- ^ 入力情報と出力関係のオプション
-                -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
-                -> e   -- ^ 簡約対象のラムダ式
-                -> IO (e, ProgDot, IoInfo)
-untilStopInput f ioInf pd expr = do
-    ret <- careIoInfo f ioInf pd expr
-    case ret of
-        (RedProg pd' _  expr', ioInf') -> do
-            -- putStrLn ("Prog: " ++ show ret)
-            untilStopInput f ioInf' pd' expr'
-        (RedStop pd' ix _   , ioInf')
-            | isPdMature 1 ioInf' pd' ->
-                error $ "Not Chuch Number" ++ show pd'
-            | ix < 0 -> return (expr, pd', ioInf')
-            | otherwise -> untilStopInput f ioInf' pd' expr
 
 -- | -vオプション指定時のみactを実行し、最後にstderrをflush
 onlyV :: IoInfo -> IO () -> IO ()

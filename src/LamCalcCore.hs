@@ -57,30 +57,6 @@ instance Arbitrary LamExpr where
         -- , In . abs <$> arbitrary
         ]
 
--- | Lazy Kプログラムの入力状態と、出力オプション
-data IoInfo = IoInfo
-    { inEof :: !Bool    -- ^ 標準入力が EOF に達したか。
-    , inHist :: ![Int]  -- ^ 受信済みの標準入力データ。
-                        -- EOF 到達後のインデックスを読み出した場合、
-                        -- 256 が補完される。
-    , optV :: !Bool      -- ^ 起動時に-vオプションが指定されているか。
-    , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
-    , lamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
-    , startCPUTime :: !Integer -- ^ 開始時の getCPUTime
-    } deriving (Eq, Ord, Show)
-
-instance Default IoInfo where
-    def = IoInfo False [] False def 'λ' 0
-
-instance Arbitrary IoInfo where
-    arbitrary = IoInfo
-        <$> arbitrary
-        <*> (map (`mod` 256) <$> arbitrary)
-        <*> arbitrary
-        <*> arbitrary
-        <*> oneof [pure 'λ', pure '\\']
-        <*> arbitrary
-
 -- ラムダ式の長さを取得
 --
 -- Unlambdaスタイルで表示した時の文字列長を基準に算出。
@@ -98,14 +74,6 @@ a %: b = App (1 + lamSize a + lamSize b) a b
 -- | ラムダ抽象の演算子
 la :: LamExpr -> LamExpr
 la a = L (1 + lamSize a) a
-
-
-{-
- - Show Functions
-instance Show LamExpr where
-    show e = ret
-      where Stringifying ret _ _ = toNamedString def e
- -}
 
 -- | NameMamager の命名ポリシー
 data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表示。
@@ -495,48 +463,6 @@ data RedResult e = RedStop ProgDot Int e
     --   Inputプロミスにぶつかり、indexがIntの値だった。
     deriving (Show)
 
-forceProg :: RedResult e -> RedResult e
-forceProg (RedStop d i e) = RedProg d i e
-forceProg prog            = prog
-
-data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
-
-instance Default ProgDot where
-    def = ProgDot [0, 0]
-
-instance Arbitrary ProgDot where
-    arbitrary = ProgDot <$> vectorOf 2 (arbitrary `suchThat` (>= 0))
-
-instance Num ProgDot where
-    (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
-    (*) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (*) d1 d2)
-    negate (ProgDot d) = ProgDot (map negate d)
-    abs (ProgDot d) = ProgDot (map abs d)
-    signum (ProgDot d) = ProgDot (map signum d)
-    fromInteger n = ProgDot [fromInteger n, 0]
-
-incPd :: Int -> RedResult e -> RedResult e
-incPd 1 (RedStop d i e) = RedStop (d + ProgDot [0, 1]) i e
-incPd 1 (RedProg d i e) = RedProg (d + ProgDot [0, 1]) i e
-incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
-incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
-incPd _ r               = r
-
-incPds :: ProgDot -> RedResult e -> RedResult e
-incPds ds (RedStop d i e) = RedStop (d + ds) i e
-incPds ds (RedProg d i e) = RedProg (d + ds) i e
-
-isPdMature :: Int -> IoInfo -> ProgDot -> Bool
-isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
-    | mat !! n == 0            = False
-    | n >= length mat || n < 0 = False
-    | otherwise                = (d !! n) >= (mat !! n)
-
-clearPd :: Int -> ProgDot -> ProgDot
-clearPd n (ProgDot ioInf) = ProgDot $ zipWith setNto0 [0..] ioInf
-  where
-    setNto0 i x = if i == n then 0 else x
-
 instance Functor RedResult where
     fmap f (RedStop pd i e) = RedStop pd i (f e)
     fmap f (RedProg pd i e) = RedProg pd i (f e)
@@ -561,7 +487,79 @@ takeExpr :: RedResult e -> e
 takeExpr (RedStop _ _ e) = e
 takeExpr (RedProg _ _ e) = e
 
--- | 変化しなくなるまで、関数の適用を繰り返す。
+-- | RedStop でも、RedProg に書き換え。
+forceProg :: RedResult e -> RedResult e
+forceProg (RedStop d i e) = RedProg d i e
+forceProg prog            = prog
+
+-- | 進捗Dot用のカウントデータ
+data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
+
+instance Default ProgDot where
+    def = ProgDot [0, 0]
+
+instance Arbitrary ProgDot where
+    arbitrary = ProgDot <$> vectorOf 2 (arbitrary `suchThat` (>= 0))
+
+instance Num ProgDot where
+    (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
+    (*) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (*) d1 d2)
+    negate (ProgDot d) = ProgDot (map negate d)
+    abs (ProgDot d) = ProgDot (map abs d)
+    signum (ProgDot d) = ProgDot (map signum d)
+    fromInteger n = ProgDot [fromInteger n, 0]
+
+-- | Lazy Kプログラムの入力状態と、出力オプション
+data IoInfo = IoInfo
+    { inEof :: !Bool    -- ^ 標準入力が EOF に達したか。
+    , inHist :: ![Int]  -- ^ 受信済みの標準入力データ。
+                        -- EOF 到達後のインデックスを読み出した場合、
+                        -- 256 が補完される。
+    , optV :: !Bool      -- ^ 起動時に-vオプションが指定されているか。
+    , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
+    , lamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
+    , startCPUTime :: !Integer -- ^ 開始時の getCPUTime
+    } deriving (Eq, Ord, Show)
+
+instance Default IoInfo where
+    def = IoInfo False [] False def 'λ' 0
+
+instance Arbitrary IoInfo where
+    arbitrary = IoInfo
+        <$> arbitrary
+        <*> (map (`mod` 256) <$> arbitrary)
+        <*> arbitrary
+        <*> arbitrary
+        <*> oneof [pure 'λ', pure '\\']
+        <*> arbitrary
+
+-- | 指定レベルの進捗Dotのカウンタを加算
+incPd :: Int -> RedResult e -> RedResult e
+incPd 1 (RedStop d i e) = RedStop (d + ProgDot [0, 1]) i e
+incPd 1 (RedProg d i e) = RedProg (d + ProgDot [0, 1]) i e
+incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
+incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
+incPd _ r               = r
+
+-- | 各レベルの進捗Dotのカウンタを加算
+incPds :: ProgDot -> RedResult e -> RedResult e
+incPds ds (RedStop d i e) = RedStop (d + ds) i e
+incPds ds (RedProg d i e) = RedProg (d + ds) i e
+
+-- | 進捗Dotを出力条件が満たされたか。
+isPdMature :: Int -> IoInfo -> ProgDot -> Bool
+isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
+    | mat !! n == 0            = False
+    | n >= length mat || n < 0 = False
+    | otherwise                = (d !! n) >= (mat !! n)
+
+-- | 進捗Dotのカウンタをクリア
+clearPd :: Int -> ProgDot -> ProgDot
+clearPd n (ProgDot ioInf) = ProgDot $ zipWith setNto0 [0..] ioInf
+  where
+    setNto0 i x = if i == n then 0 else x
+
+-- | 変化しなくなるまで、指定された関数の適用を繰り返す。
 untilStop :: (IoInfo -> ProgDot -> e -> RedResult e)
             -> IoInfo
             -> ProgDot
