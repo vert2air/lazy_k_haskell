@@ -556,6 +556,24 @@ instance Monad RedResult where
         RedStop dF j e' -> RedProg (dE + dF) (max i j) e'
         RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
 
+-- | RedResult の中の式を取り出す。
+takeExpr :: RedResult e -> e
+takeExpr (RedStop _ _ e) = e
+takeExpr (RedProg _ _ e) = e
+
+-- | 変化しなくなるまで、関数の適用を繰り返す。
+untilStop :: (IoInfo -> ProgDot -> e -> RedResult e)
+            -> IoInfo
+            -> ProgDot
+            -> e
+            -> RedResult e
+untilStop f ioInf d e = case f ioInf d e of
+    r@(RedProg _io ix red)
+        | ix >= 0              -> r
+        | isPdMature 1 ioInf d -> r
+        | otherwise            -> untilStop f ioInf d red
+    r@(RedStop _ _ _) -> r
+
 {- | Beta/Eta簡約の実行 (入力の遅延評価対応)
 
  入力が遅延評価される前提で、可能な範囲でbeta簡約およびeta簡約を行う。
@@ -662,9 +680,7 @@ buildInput (IoInfo eof input _ _ _ _) ix
 
 -- | 変化しなくなるまで、beta/eta簡約を繰り返す。
 reductInf :: LamExpr -> LamExpr
-reductInf e = case reduct def def e of
-    RedProg _ _ red -> reductInf red
-    RedStop _ _ red -> red
+reductInf = takeExpr . untilStop reduct def def
 
 -- | Church encodingで、ix を表現するラムダ式を生成
 makeChuchNum :: Int -> LamExpr

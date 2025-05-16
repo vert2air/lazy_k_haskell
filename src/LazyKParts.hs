@@ -27,7 +27,7 @@ deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
 deconsLoop _  (Just 0)  _     _    = return ExitSuccess
 deconsLoop pd countdown ioInf expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
-    (car_lam, pd'', ioInf'') <- infinit ioInf' pd' car
+    (car_lam, pd'', ioInf'') <- untilStopInput reduct ioInf' pd' car
     let num = getChNum car_lam
     case num of
         Just n
@@ -60,7 +60,7 @@ decons ioInf d expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
     _ -> do
-        reded <- reductInput ioInf d expr
+        reded <- careIoInfo reduct ioInf d expr
         case reded of
             (RedProg d' _ expr', ioInf') -> decons ioInf' d' expr'
             ret@(RedStop d' ix expr', ioInf')
@@ -73,15 +73,19 @@ decons ioInf d expr =
                                         ++ show (toNamedString def expr')
                                         ++ " = " ++ show ret
 
--- | Beta/Eta簡約 (遅延入力対応)
-reductInput :: IoInfo   -- ^ 入力情報と出力関係のオプション
+-- | RedResult を返す関数のIO周りの対応 (遅延入力対応)
+--
+-- 基本的には、RedResult を返す関数を1回だけ呼出すが、
+-- 以下の場合には、対処の処理を実施後、再度呼出すことで処理を継続する。
+--   case-1. 入力プロミスの不足が発生: 補充の為のblockingと補充。
+--   case-2. 進捗dotの表示の為の中断が発生: 進捗dotを表示。
+careIoInfo :: (IoInfo -> ProgDot -> e -> RedResult e)
+            -> IoInfo   -- ^ 入力情報と出力関係のオプション
             -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
-            -> LamExpr   -- ^ 簡約対象のラムダ式
-            -> IO (RedResult LamExpr, IoInfo)
-reductInput ioInf d expr = do
-    let ret' = reduct ioInf d expr
-    let ret'' = incPd 0 ret'
-    ret <- case ret'' of
+            -> e   -- ^ 簡約対象のラムダ式
+            -> IO (RedResult e, IoInfo)
+careIoInfo f ioInf d expr = do
+    ret <- case incPd 0 $ f ioInf d expr of
         op@(RedProg pd ixp ep)
             | isPdMature 0 ioInf pd -> do
                 hPutStr stderr "*"  -- 進捗dotの表示
@@ -101,7 +105,7 @@ reductInput ioInf d expr = do
                 hPutStr stderr "."  -- 進捗dotの表示
                 hFlush stderr
                 -- 他の条件は、再帰の中でチェックする。
-                (red, ioInf'') <- reductInput ioInf (clearPd 1 pd) expr'
+                (red, ioInf'') <- careIoInfo f ioInf (clearPd 1 pd) expr'
                 return (forceProg red, ioInf'')
             | ix < 0 -> do
                 -- 遅延入力に当たらず、簡約が進んだ。
@@ -111,14 +115,14 @@ reductInput ioInf d expr = do
                 -- 簡約が進んだが、遅延入力で止まった。
                 -- putStrLn "---------------> RedProg Plus"
                 ioInf' <- pollInput ix ioInf
-                (red, ioInf'') <- reductInput ioInf' pd expr'
+                (red, ioInf'') <- careIoInfo f ioInf' pd expr'
                 return (forceProg red, ioInf'')
         RedStop pd ix _
             | isPdMature 1 ioInf pd -> do
                 -- 返ってきた理由は、beta簡約の回数が基準に達したからだった。
                 hPutStr stderr "."  -- 進捗dotの表示
                 hFlush stderr
-                reductInput ioInf (clearPd 1 pd) expr
+                careIoInfo f ioInf (clearPd 1 pd) expr
             | ix < 0 -> do
                 -- putStrLn "---------------> RedStop minus"
                 return (RedStop pd ix expr, ioInf) -- 元のexprを使用。
@@ -126,7 +130,7 @@ reductInput ioInf d expr = do
                 -- putStrLn "---------------> RedStop Plus"
                 -- putStrLn . show $ ret
                 ioInf' <- pollInput ix ioInf
-                reductInput ioInf' pd expr    -- 元のexprを使用。
+                careIoInfo f ioInf' pd expr    -- 元のexprを使用。
 
 -- | 標準入力から指定番目まで取得 (blocking処理)
 pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン。
@@ -155,19 +159,22 @@ getNchar acc n
                   getNchar (acc ++ [ord c]) (n - 1)
 
 -- | expr に可能な限りbeta/eta簡約を再帰実行 (遅延入力対応)
-infinit :: IoInfo -> ProgDot -> LamExpr -> IO (LamExpr, ProgDot, IoInfo)
-infinit ioInf pd expr = do
-    -- putStrLn $ "infinit : " ++ show ioInf ++ " : " ++ show expr ++ " <<<<<<"
-    ret <- reductInput ioInf pd expr
+untilStopInput :: (IoInfo -> ProgDot -> e -> RedResult e)
+                -> IoInfo   -- ^ 入力情報と出力関係のオプション
+                -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+                -> e   -- ^ 簡約対象のラムダ式
+                -> IO (e, ProgDot, IoInfo)
+untilStopInput f ioInf pd expr = do
+    ret <- careIoInfo f ioInf pd expr
     case ret of
         (RedProg pd' _  expr', ioInf') -> do
             -- putStrLn ("Prog: " ++ show ret)
-            infinit ioInf' pd' expr'
+            untilStopInput f ioInf' pd' expr'
         (RedStop pd' ix _   , ioInf')
             | isPdMature 1 ioInf' pd' ->
                 error $ "Not Chuch Number" ++ show pd'
             | ix < 0 -> return (expr, pd', ioInf')
-            | otherwise -> infinit ioInf' pd' expr
+            | otherwise -> untilStopInput f ioInf' pd' expr
 
 -- | -vオプション指定時のみactを実行し、最後にstderrをflush
 onlyV :: IoInfo -> IO () -> IO ()
