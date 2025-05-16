@@ -584,14 +584,14 @@ reduct :: IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
+-- 進捗Dotのチェック
+reduct ioInf d e | isPdMature 1 ioInf d = RedStop d (-1) e
 -- eta簡約
 reduct ioInf d (L _ (App _ fun (V 1)))
     | not (hasVar 1 fun) =
         forceProg $ reduct ioInf d $ comple (shallow 1) fun
 -- 以降は、beta簡約
 reduct ioInf d              (L _ le)    = la <$> reduct ioInf d le
-reduct ioInf d            e@(App _ (L _ _) _)
-    | isPdMature 1 ioInf d = RedStop d (-1) e
 reduct ioInf d              (App _ (L _ le) e) = case once of
     -- beta簡約の結果が、再び関数適用だった。
     -- ここまで簡約出来る箇所が無かった結果ここで簡約を行ったので、
