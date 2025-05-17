@@ -16,7 +16,7 @@ import System.Environment (getArgs)
 import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
-import LazyKParts (deconsLoop, onlyV)
+import LazyKParts (deconsLoopCc, onlyV)
 
 data Flag = MaxOut Int
           | Verbose Bool
@@ -98,8 +98,8 @@ lazy ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
     case readLazyK srcFile lazySrc of
         Right a -> do
-            deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
+            -- deconsLoopLc ioInf def maxOut . toLambda $ a %: In(0)
+            deconsLoopCc ioInf def maxOut $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
             return $ ExitFailure 1
-

@@ -623,6 +623,46 @@ reduct ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
     | otherwise = RedStop d ix e
 reduct _ d e            = incPds d $ return e     -- V and Nm
 
+red_ccN :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> RedResult LamExpr
+red_ccN ioInf d e = case once of
+    s@(RedStop _d _ _)                                  -> s
+    RedProg    d' _ e'@(App _ (Nm "plus1") (V _))       -> red_ccN ioInf d' e'
+    RedProg    d' _ e'@(App _ (Nm "I") _)               -> red_ccN ioInf d' e'
+    p@(RedProg _  _    (App _ (Nm _) _))                -> p
+    RedProg    d' _ e'@(App _ (App _ (Nm "K") _x) _y)   -> red_ccN ioInf d' e'
+    RedProg    d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y)
+                                                        -> red_ccN ioInf d' e'
+    p@(RedProg _  _    (App _ (App _ (Nm _) _x) _y))    -> p
+    RedProg    d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
+                                                        -> red_ccN ioInf d' e'
+    -- 戻って簡約出来るパターンはチェック済みなので、一旦、return
+    p@(RedProg _  _ _)                                 -> p
+  where
+    once = red_ccN_1 ioInf d e
+
+red_ccN_1 :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> RedResult LamExpr
+red_ccN_1 _io d (App _ (Nm "plus1") (V v))      = RedProg d (-1) . V $ v + 1
+red_ccN_1 _io d (App _ (Nm "I") x)              = RedProg d (-1) x
+red_ccN_1 _io d (App _ (App _ (Nm "K") x) _y)   = RedProg d (-1) x
+red_ccN_1 _io d (App _ (App _ (Nm "S") (Nm "K")) _y) = RedProg d (-1) $ Nm "I"
+red_ccN_1 _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z)
+                                                = RedProg d (-1) z
+-- CCの簡約でより複雑になるのは、このパターンだけ。ここだけ incPd する。
+red_ccN_1 _io d (App _ (App _ (App _ (Nm "S") x) y) z)
+                                = incPd 1 . RedProg d (-1) $ x %: z %: (y %: z)
+red_ccN_1 ioInf d (App _ f o) = case f' of
+    RedStop d' _i _   -> (f %:) <$> red_ccN_1 ioInf d' o
+    RedProg d' i  f'' -> RedProg d' i $ f'' %: o
+  where
+    f' = red_ccN_1 ioInf d f
+red_ccN_1 _io d e = RedStop d (-1) e
+
 {- | Beta/Eta簡約の実行 (入力の遅延評価対応)
 
  入力が遅延評価される前提で、可能な範囲でbeta簡約又はeta簡約を1回だけ行う。
