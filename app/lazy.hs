@@ -16,9 +16,10 @@ import System.Environment (getArgs)
 import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
-import LazyKParts (deconsLoopCc, onlyV)
+import LazyKParts (deconsLoopLc, deconsLoopCc, onlyV)
 
 data Flag = MaxOut Int
+          | ToLam Bool
           | Verbose Bool
           | DotFreq ProgDot
           deriving (Show)
@@ -26,6 +27,7 @@ data Flag = MaxOut Int
 options :: [OptDescr Flag]
 options =
     [ Option [] ["max"] (ReqArg (MaxOut . readInt) "COUNT") "Max output count"
+    , Option ['l'] [] (NoArg (ToLam False)) "Process as lambda calculus"
     , Option ['v'] [] (NoArg (Verbose True)) "Verbose output"
     , Option ['d'] [] (ReqArg
             (DotFreq . ProgDot . map readInt . splitOn "," . filter (/='_'))
@@ -76,6 +78,9 @@ main = do
         maxOut = maximum . (Nothing:) $ for opts $ \op -> case op of
                         (MaxOut n) -> Just n
                         _ -> Nothing
+        toLam = forAny opts $ \op -> case op of
+                        (ToLam _) -> True
+                        _ -> False
         verbose = forAny opts $ \op -> case op of
                         (Verbose _) -> True
                         _ -> False
@@ -86,20 +91,21 @@ main = do
         ioInf = IoInfo False [] verbose dotFreq 'λ' startTime
     onlyV ioInf $
         hPutStrLn stderr $ "Start time : " ++ show startTime
-    exitCode <- lazy ioInf maxOut srcFile
+    exitCode <- lazy toLam ioInf maxOut srcFile
     endTime <- getCPUTime
     onlyV ioInf $ do
         let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
         hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
     exitWith exitCode
 
-lazy :: IoInfo -> Maybe Int -> String -> IO ExitCode
-lazy ioInf maxOut srcFile = do
+lazy :: Bool -> IoInfo -> Maybe Int -> String -> IO ExitCode
+lazy toLam ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
     case readLazyK srcFile lazySrc of
         Right a -> do
-            -- deconsLoopLc ioInf def maxOut . toLambda $ a %: In(0)
-            deconsLoopCc ioInf def maxOut $ a %: In(0)
+            if toLam
+                then deconsLoopLc ioInf def maxOut . toLambda $ a %: In(0)
+                else deconsLoopCc ioInf def maxOut $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
             return $ ExitFailure 1
