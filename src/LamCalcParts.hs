@@ -60,7 +60,7 @@ a % b = Stat
     , cnt_S         = cnt_S      a + cnt_S      b
     , cnt_Iota      = cnt_Iota   a + cnt_Iota   b
     , cnt_Jot_0     = cnt_Jot_0  a + cnt_Jot_0  b
-    , cnt_Jot_1     = cnt_Jot_1  a + cnt_Jot_1  b 
+    , cnt_Jot_1     = cnt_Jot_1  a + cnt_Jot_1  b
     , freeVar_index = freeVar_index a `addEach` freeVar_index b
     , freeVar_named = freeVar_named a `addEach` freeVar_named b
     , input_promise = input_promise a `addEach` input_promise b
@@ -131,7 +131,7 @@ cn_succ = readStr "`s``s`ksk"
 cn_plus = la . la . la . la $ V 4 %: V 2 %: (V 3 %: V 2 %: V 1)
 cn_mult = la . la . la $ V 3 %: (V 2 %: V 1)
 cn_pred = la . la . la $ ((V 3 %: (la . la $ V 1 %: (V 2 %: V 4)))) %: la (V 2) %: la (V 1)
-cn_minus = la . la $ V 1 %: cn_pred %: V 2 
+cn_minus = la . la $ V 1 %: cn_pred %: V 2
 is_eq = la . la $ (
     lc_and
         %: (is_zero %: (cn_minus %: V 1 %: V 2))
