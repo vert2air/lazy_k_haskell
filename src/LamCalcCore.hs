@@ -162,6 +162,7 @@ toNamedString mng (V v) = Stringifying name SK_General mng
   where
     name = case v <= length (nmStack mng) of
             True
+                | v == 0                 -> '_' : show v  -- red_ccN用の処理
                 | (nmStack mng !! (v - 1)) /= ' ' -> [nmStack mng !! (v - 1)]
             -- De Bruijn index は先頭に'_'を付ける。
             _                                     -> '_' : show v
