@@ -206,6 +206,8 @@ pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン�
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
         -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
 pollInput ix ioInf = do
+    onlyV ioInf $
+        hPutStrLn stderr $ "pollInput ix=" ++ show ix
     let lack = ix - length (inHist ioInf) + 1
     (eof', add) <- getNchar [] lack
     let newHist = if eof' && length add < lack
