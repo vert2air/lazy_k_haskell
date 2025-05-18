@@ -15,22 +15,47 @@ import Text.Parsec ((<|>), Parsec, char, many1, oneOf, parse)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
                 , (%:), la, reduct, forceProg, isPdMature, incPd, clearPd
-                , toNamedString)
-import LamCalcParts (getChNum)
+                , toNamedString, takeStringified
+                , NameManager(..), PolicyKind(..)
+                )
+import LamCalcParts (getChNum, red_ccN)
 
--- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
-deconsLoop :: ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
-        -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
-        -> IoInfo       -- ^ 入力情報と出力関係のオプション
-        -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
-        -> IO ExitCode      -- ^ プログラムの終了コード
-deconsLoop _  (Just 0)  _     _    = return ExitSuccess
-deconsLoop pd countdown ioInf expr = do
+-- | 純粋なラムダ式と、コンビネータ表現、それぞれの deconsLoop のsetup
+deconsLoopLc, deconsLoopCc ::
+               IoInfo       -- ^ 入力情報と出力関係のオプション
+            -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
+            -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
+            -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
+            -> IO ExitCode  -- ^ プログラムの終了コード
+deconsLoopLc = deconsLoop deconsLc toIntLc
+deconsLoopCc = deconsLoop deconsCc toIntCc
+
+{- | expr を Scott encoding のリストとして扱い、全要素を出力 (遅延入力対応)
+
+リストを先頭からscanしながら表示する。以下のいずれの条件まで繰り返す。
+
+* 256以上の数が現れる。(終了コードは、数値 - 256)
+* scanした個数が出力最大数に達する。(終了コードは 0)
+
+但し、consを分解する関数と、carを数値に変換する関数は、
+入力として与えられるので、式の表現や、もっと言えば式であるかさえも
+この関数は感知しない。
+-}
+deconsLoop :: (IoInfo -> ProgDot -> e -> IO (e, e, ProgDot, IoInfo))
+                            -- ^ 式を car/cdr に分割する関数
+            -> (IoInfo -> ProgDot -> e -> IO (Either String Int, ProgDot, IoInfo))
+                            -- ^ 式(car)を数値に変換する関数
+            -> IoInfo       -- ^ 入力情報と出力関係のオプション
+            -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
+            -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
+            -> e            -- ^ 出力すべき Scott encoding のリスト
+            -> IO ExitCode  -- ^ プログラムの終了コード
+deconsLoop _      _     _     _  (Just 0)  _    = return ExitSuccess
+deconsLoop decons toInt ioInf pd countdown expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
-    (car_lam, pd'', ioInf'') <- untilStopInput reduct ioInf' pd' car
-    let num = getChNum car_lam
+    (num, pd'', ioInf'') <- toInt ioInf' pd' car
     case num of
-        Just n
+        Right n
             | n < 256 -> do
                 onlyV ioInf'' $ do
                     curTime <- getCPUTime
@@ -41,44 +66,80 @@ deconsLoop pd countdown ioInf expr = do
                          ++ "'  "++ show sec ++ " sec"
                 putChar $ chr n
                 hFlush stdout
-                deconsLoop pd'' (fmap (+(-1)) countdown) ioInf'' cdr
+                deconsLoop decons toInt ioInf'' pd''
+                                                (fmap (+(-1)) countdown) cdr
             | otherwise -> do
                 onlyV ioInf'' $
                     hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
                 return $ if n == 256 then ExitSuccess
                                      else ExitFailure (n - 256)
-        _ -> do
-            hPutStrLn stderr $ "car is not number"
+        Left e -> do
+            hPutStrLn stderr $ "car is not number : " ++ e
             return $ ExitFailure 1
 
 -- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
-decons :: IoInfo     -- ^ 入力情報と出力関係のオプション
+deconsLc :: IoInfo   -- ^ 入力情報と出力関係のオプション
         -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
         -> LamExpr   -- ^ 分割すべき Scott encoding のリスト
         -> IO (LamExpr, LamExpr, ProgDot, IoInfo)
-decons ioInf d expr =
+deconsLc ioInf d expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
     _ -> do
         reded <- careIoInfo reduct ioInf d expr
         case reded of
-            (RedProg d' _ expr', ioInf') -> decons ioInf' d' expr'
+            (RedProg d' _ expr', ioInf') -> deconsLc ioInf' d' expr'
             ret@(RedStop d' ix expr', ioInf')
                 -- 進捗dotの表示タイミングか、inputブロック。再帰で処理。
                 | isPdMature 1 ioInf' d' || ix >= 0 ->
-                    decons ioInf' d' expr'
+                    deconsLc ioInf' d' expr'
                 -- Lazy Kプログラムなら、scott encode の list を出力する筈。
                 -- cons の形でなく、beta簡約も進まないのなら、エラー。
                 | otherwise -> error $ "Invalid program: ret="
                                         ++ show (toNamedString def expr')
                                         ++ " = " ++ show ret
 
+-- | 純粋なラムダ式(=App, V, L のみから成る)のChurch数から整数取得
+toIntLc :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> IO (Either String Int, ProgDot, IoInfo)
+toIntLc ioInf pd expr = do
+    (car_lam, pd', ioInf') <- untilStopInput reduct ioInf pd expr
+    return (getChNum car_lam, pd', ioInf')
+
+-- | deconsLc のコンビネータ版。
+-- expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
+deconsCc :: IoInfo   -- ^ 入力情報と出力関係のオプション
+        -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> LamExpr   -- ^ 分割すべき Scott encoding のリスト
+        -> IO (LamExpr, LamExpr, ProgDot, IoInfo)
+deconsCc ioInf d expr = return (car %: expr, cdr %: expr, d, ioInf)
+  where
+    car = Nm "S" %: Nm "I" %: (Nm "K" %: Nm "K")
+    cdr = Nm "S" %: Nm "I" %: (Nm "K" %: (Nm "K" %: Nm "I"))
+
+-- | コンビネータ表現のChurch数から、整数取得。
+toIntCc :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> IO (Either String Int, ProgDot, IoInfo)
+toIntCc ioInf pd expr = do
+    (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $
+                                                    expr %: Nm "+1" %: V 0
+    case car_cc of
+        V n -> return (Right n, pd', ioInf')
+        e   -> return (Left $
+                takeStringified $ toNamedString def{nmPolicy=PK_index} e
+                        , pd', ioInf')
+
 -- | RedResult を返す関数のIO周りの対応 (遅延入力対応)
 --
 -- 基本的には、RedResult を返す関数を1回だけ呼出すが、
 -- 以下の場合には、対処の処理を実施後、再度呼出すことで処理を継続する。
---   case-1. 入力プロミスの不足が発生: 補充の為のblockingと補充。
---   case-2. 進捗dotの表示の為の中断が発生: 進捗dotを表示。
+--
+--   - case-1. 入力プロミスの不足が発生: 補充の為のblockingと補充。
+--   - case-2. 進捗dotの表示の為の中断が発生: 進捗dotを表示。
 careIoInfo :: (IoInfo -> ProgDot -> e -> RedResult e)
             -> IoInfo   -- ^ 入力情報と出力関係のオプション
             -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
@@ -155,6 +216,8 @@ pollInput :: Int     -- ^ 何番目のbyteまで取得するか。0オリジン�
         -> IoInfo    -- ^ 入力情報と出力関係のオプション
         -> IO IoInfo -- ^ 新たに入力されたbyteを反映した IoInfo
 pollInput ix ioInf = do
+    onlyV ioInf $
+        hPutStrLn stderr $ "pollInput ix=" ++ show ix
     let lack = ix - length (inHist ioInf) + 1
     (eof', add) <- getNchar [] lack
     let newHist = if eof' && length add < lack

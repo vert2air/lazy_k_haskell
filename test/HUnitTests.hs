@@ -15,9 +15,9 @@ hUnitAll = do
         ) [0..256]
 
 churchNumberTest :: String -> Int -> Test
-churchNumberTest title n = TestCase(assertEqual title (Just n) (calc title n))
+churchNumberTest title n = TestCase(assertEqual title (Right n) (calc title n))
 
-calc :: String -> Int -> Maybe Int
+calc :: String -> Int -> Either String Int
 calc title n = case readLazyK title . (shortChNum!!) $ n of
-            Right e -> getChNum . reductInf . toLambda $ e
-            _       -> Nothing
+            Right e  -> getChNum . reductInf . toLambda $ e
+            Left msg -> Left msg

@@ -109,7 +109,8 @@ asm :: LamExpr -> IO ()
 asm input = do
     -- takeStringified . toNamedString def $ input
     -- takeStringified . toNamedString def . comple abstElim $ input
-    takeStringified . toNamedString def . comple abstElim . comple abstElim $ input
+    putStrLn . takeStringified . toNamedString def
+        . comple abstElim . comple abstElim $ input
 
 main :: IO ()
 main = do

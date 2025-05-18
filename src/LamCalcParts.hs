@@ -11,7 +11,9 @@ import           Data.Either (fromRight)
 import qualified Data.Map as M (Map, empty, singleton)
 import Data.Map.Merge.Lazy (merge, preserveMissing, zipWithMatched)
 
-import LamCalcCore (LamExpr(..), la, (%:), readLazyK)
+import LamCalcCore (LamExpr(..), IoInfo(..), ProgDot(..), RedResult(..)
+                    , la, (%:), readLazyK, forceProg, incPd, takeStringified
+                    , toNamedString)
 
 data Stat = Stat
     { maxDepth :: !Int
@@ -60,7 +62,7 @@ a % b = Stat
     , cnt_S         = cnt_S      a + cnt_S      b
     , cnt_Iota      = cnt_Iota   a + cnt_Iota   b
     , cnt_Jot_0     = cnt_Jot_0  a + cnt_Jot_0  b
-    , cnt_Jot_1     = cnt_Jot_1  a + cnt_Jot_1  b 
+    , cnt_Jot_1     = cnt_Jot_1  a + cnt_Jot_1  b
     , freeVar_index = freeVar_index a `addEach` freeVar_index b
     , freeVar_named = freeVar_named a `addEach` freeVar_named b
     , input_promise = input_promise a `addEach` input_promise b
@@ -131,7 +133,7 @@ cn_succ = readStr "`s``s`ksk"
 cn_plus = la . la . la . la $ V 4 %: V 2 %: (V 3 %: V 2 %: V 1)
 cn_mult = la . la . la $ V 3 %: (V 2 %: V 1)
 cn_pred = la . la . la $ ((V 3 %: (la . la $ V 1 %: (V 2 %: V 4)))) %: la (V 2) %: la (V 1)
-cn_minus = la . la $ V 1 %: cn_pred %: V 2 
+cn_minus = la . la $ V 1 %: cn_pred %: V 2
 is_eq = la . la $ (
     lc_and
         %: (is_zero %: (cn_minus %: V 1 %: V 2))
@@ -179,15 +181,98 @@ y_comb = la $ (la (V 2 %: (V 1 %: V 1))) %: (la (V 2 %: (V 1 %: V 1)))
 
 -- | 引数にbeta/eta簡約済みの Church encoding の自然数を受取り、値を返す。
 getChNum :: LamExpr  -- ^ 簡約済みの Church encoding の自然数。
-        -> Maybe Int -- ^ ラムダ式が表す自然数。想定外は全て Nothing。
+        -> Either String Int -- ^ ラムダ式が表す自然数。errorは式の文字列返却。
 getChNum (L _ (L _ llexp)) = countF llexp
   where
-    countF (V 1) = Just 0
+    countF (V 1) = Right 0
     countF (App _ (V 2) e) = (+1) <$> countF e
-    countF _ = Nothing
+    countF e = Left . takeStringified . toNamedString def $ e
 -- 1 = λfx.fx = λf.f (eta変換より) なので、個別に処理。
-getChNum (L _ (V 1)) = Just 1
-getChNum _ = Nothing
+getChNum (L _ (V 1)) = Right 1
+getChNum e = Left . takeStringified . toNamedString def $ e
+
+-- | コンビネータ表現からchurch数を取り出す。
+--
+-- Nm "+1" と 数値 n を表す V n が使われていることが前提。
+-- 通常の LamExpr とは、意味が異なっている。
+red_ccN :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> RedResult LamExpr
+red_ccN ioInf d e = case once of
+    -- 停止したのなら、続けても無駄。
+    s@(RedStop _d _ _)                                  -> s
+    -- 既に入力promiseに当たったのなら、続けても無駄。
+    p@(RedProg _d ix   _)                   | ix >= 0   -> p
+    -- 次に入力promiseに当たるのが分かっているのなら、続けても無駄。
+    p@(RedProg _d _    (In _))                          -> p
+    p@(RedProg _d _    (App _ (In _) _))                -> p
+    -- red_ccN 特有処理。Nm "+1" の簡約。
+    RedProg    d' _ e'@(App _ (Nm "+1") (V _))          -> red_ccN ioInf d' e'
+    RedProg    d' _ e'@(App _ (Nm "I") _)               -> red_ccN ioInf d' e'
+    p@(RedProg _  _    (App _ (Nm _) _))                -> p
+    RedProg    d' _ e'@(App _ (App _ (Nm "K") _x) _y)   -> red_ccN ioInf d' e'
+    RedProg    d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y)
+                                                        -> red_ccN ioInf d' e'
+    p@(RedProg _  _    (App _ (App _ (Nm _) _x) _y))    -> p
+    RedProg    d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
+                                                        -> red_ccN ioInf d' e'
+    -- 戻って簡約出来るパターンはチェック済みなので、一旦、return
+    p@(RedProg _  _ _)                                 -> p
+  where
+    once = red_ccN_1 ioInf d e
+
+-- | コンビネータ表現からchurch数を取り出す。1 stepのみ。
+--
+-- Nm "+1" と 数値 n を表す V n が使われていることが前提。
+-- 通常の LamExpr とは、意味が異なっている。
+red_ccN_1 :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> RedResult LamExpr
+red_ccN_1 ioInf d e@(In ix)
+    | inEof ioInf || ix < length (inHist ioInf)
+        = forceProg $ red_ccN_1 ioInf d $ buildInputCC ioInf ix
+    | otherwise                                 = RedStop d ix e
+red_ccN_1 ioInf d e@(App _ (In ix) oprd)
+    | inEof ioInf || ix < length (inHist ioInf)
+        = forceProg $ red_ccN_1 ioInf d $ buildInputCC ioInf ix %: oprd
+    | otherwise                                 = RedStop d ix e
+red_ccN_1 _io d (App _ (Nm "+1") (V v))         = RedProg d (-1) . V $ v + 1
+red_ccN_1 _io d (App _ (Nm "I") x)              = RedProg d (-1) x
+red_ccN_1 _io d (App _ (App _ (Nm "K") x) _y)   = RedProg d (-1) x
+red_ccN_1 _io d (App _ (App _ (Nm "S") (Nm "K")) _y) = RedProg d (-1) $ Nm "I"
+red_ccN_1 _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z)
+                                                = RedProg d (-1) z
+-- CCの簡約でより複雑になるのは、このパターンだけ。ここだけ incPd する。
+red_ccN_1 _io d (App _ (App _ (App _ (Nm "S") x) y) z)
+                                = incPd 1 . RedProg d (-1) $ x %: z %: (y %: z)
+red_ccN_1 ioInf d (App _ f o) = case f' of
+    e@(RedStop _ i _)
+        | i >= 0 -> (%: o) <$> e    -- ToDo ここから
+    RedStop d' _i _   -> (f %:) <$> red_ccN_1 ioInf d' o
+    RedProg d' i  f'' -> RedProg d' i $ f'' %: o
+  where
+    f' = red_ccN_1 ioInf d f
+red_ccN_1 _io d e = RedStop d (-1) e
+
+buildInputCC :: IoInfo  -- ^ 標準入力の履歴と進捗Dotの表示頻度
+            -> Int      -- ^ beta簡約に必要なinputのインデックス
+            -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
+buildInputCC (IoInfo eof input _ _ _ _) ix
+    | ix < length input = foldr makeCons (In (length input)) $ drop ix input
+    | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
+    | otherwise = error "buildInput: called under unexpected condition"
+  where
+    -- ToDo
+    makeCons a d = Nm "S"
+            %: (Nm "S" %: Nm "I" %: (Nm "K" %: ccNum a))
+            %: (Nm "K" %: d)
+    ccNum num = fromRight (error "ccNum in buildInputCC")
+                $ readLazyK "buildInputCC" (shortChNum !! num)
+    compInput
+        | eof = input ++ take (ix - length input + 1) [256, 256 ..]
+        | otherwise = input
 
 -- | コンパクトにChurch encodeした自然数 (0～256)
 shortChNum :: [String]
