@@ -128,10 +128,13 @@ data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
 data Stringifying = Stringifying String StyleInfoKind NameManager
                     deriving (Show)
 
+takeStringified :: Stringifying -> String
+takeStringified (Stringifying str _ _) = str
+
 -- | docstring用に、toNamedString から手早く LamExpr を取り出す。
 -- また、putStrLn を使わないと、λ が \955 と表示されてしまう。
-takeStringified :: Stringifying -> IO ()
-takeStringified (Stringifying str _ _) = putStrLn str
+putExprLn :: Stringifying -> IO ()
+putExprLn = putStrLn . takeStringified
 
 -- | ラムダ式を文字列化
 --
@@ -139,20 +142,20 @@ takeStringified (Stringifying str _ _) = putStrLn str
 -- 入力プロミスは、'<'を付けて表示する。
 -- Lazy Kのコードとの混在も対応。
 --
--- >>> takeStringified $ toNamedString def $ la . la $ V 2
+-- >>> putExprLn $ toNamedString def $ la . la $ V 2
 -- λxy.x
--- >>> takeStringified $ toNamedString def {nmLamSign='\\'} $ la . la $ V 2
+-- >>> putExprLn $ toNamedString def {nmLamSign='\\'} $ la . la $ V 2
 -- \xy.x
--- >>> takeStringified $ toNamedString def $ la . la $ V 1
+-- >>> putExprLn $ toNamedString def $ la . la $ V 1
 -- λxx.x
--- >>> takeStringified $ toNamedString def $ (Jot 1 "0" %: Nm "q") %: Nm "iota"
+-- >>> putExprLn $ toNamedString def $ (Jot 1 "0" %: Nm "q") %: Nm "iota"
 -- *(0q)i
--- >>> takeStringified $ toNamedString def $ la $ V 1 %: In 0 -- 入力プロミス
+-- >>> putExprLn $ toNamedString def $ la $ V 1 %: In 0 -- 入力プロミス
 -- λx.x<0
 -- >>> let expr = Nm "S" %: Nm "K" %: (Nm "I" %: Nm "K")
--- >>> takeStringified $ toNamedString def {nmUnlamStyle=True} expr
+-- >>> putExprLn $ toNamedString def {nmUnlamStyle=True} expr
 -- ``sk`ik
--- >>> takeStringified $ toNamedString def {nmUnlamStyle=False} expr
+-- >>> putExprLn $ toNamedString def {nmUnlamStyle=False} expr
 -- SK(IK)
 toNamedString :: NameManager -> LamExpr -> Stringifying
 toNamedString mng (V v) = Stringifying name SK_General mng
@@ -217,11 +220,11 @@ lastLeaf e = e
 
 -- | 連続するラムダ抽象を考慮した文字列化
 --
--- >>> takeStringified $ digLamAbst def $ la . la $ V 2
+-- >>> putExprLn $ digLamAbst def $ la . la $ V 2
 -- xy.x
--- >>> takeStringified $ digLamAbst (NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False, nmLamSign = 'λ'}) $ la $ V 2
+-- >>> putExprLn $ digLamAbst (NameManager {nmPolicy = PK_minimum, nmPool = "xyzabcdefghjlmnopqrtuvwXYZABCDEFGHJLMNOPQRTUVW", nmStack = "x", nmUnlamStyle = False, nmLamSign = 'λ'}) $ la $ V 2
 -- y.x
--- >>> takeStringified $ digLamAbst def $ la . la $ V 1
+-- >>> putExprLn $ digLamAbst def $ la . la $ V 1
 -- xx.x
 digLamAbst :: NameManager
         -> LamExpr
