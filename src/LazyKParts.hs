@@ -15,8 +15,10 @@ import Text.Parsec ((<|>), Parsec, char, many1, oneOf, parse)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
                 , (%:), la, reduct, forceProg, isPdMature, incPd, clearPd
-                , toNamedString, red_ccN)
-import LamCalcParts (getChNum)
+                , toNamedString, takeStringified
+                , NameManager(..), PolicyKind(..)
+                )
+import LamCalcParts (getChNum, red_ccN)
 
 -- | 純粋なラムダ式と、コンビネータ表現、それぞれの deconsLoop のsetup
 deconsLoopLc, deconsLoopCc ::
@@ -41,7 +43,7 @@ deconsLoopCc = deconsLoop deconsCc toIntCc
 -}
 deconsLoop :: (IoInfo -> ProgDot -> e -> IO (e, e, ProgDot, IoInfo))
                             -- ^ 式を car/cdr に分割する関数
-            -> (IoInfo -> ProgDot -> e -> IO (Maybe Int, ProgDot, IoInfo))
+            -> (IoInfo -> ProgDot -> e -> IO (Either String Int, ProgDot, IoInfo))
                             -- ^ 式(car)を数値に変換する関数
             -> IoInfo       -- ^ 入力情報と出力関係のオプション
             -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
@@ -53,7 +55,7 @@ deconsLoop decons toInt ioInf pd countdown expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
     (num, pd'', ioInf'') <- toInt ioInf' pd' car
     case num of
-        Just n
+        Right n
             | n < 256 -> do
                 onlyV ioInf'' $ do
                     curTime <- getCPUTime
@@ -71,8 +73,8 @@ deconsLoop decons toInt ioInf pd countdown expr = do
                     hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
                 return $ if n == 256 then ExitSuccess
                                      else ExitFailure (n - 256)
-        _ -> do
-            hPutStrLn stderr $ "car is not number"
+        Left e -> do
+            hPutStrLn stderr $ "car is not number : " ++ e
             return $ ExitFailure 1
 
 -- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
@@ -98,7 +100,10 @@ deconsLc ioInf d expr =
                                         ++ " = " ++ show ret
 
 -- | 純粋なラムダ式(=App, V, L のみから成る)のChurch数から整数取得
-toIntLc :: (IoInfo -> ProgDot -> LamExpr -> IO (Maybe Int, ProgDot, IoInfo))
+toIntLc :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> IO (Either String Int, ProgDot, IoInfo)
 toIntLc ioInf pd expr = do
     (car_lam, pd', ioInf') <- untilStopInput reduct ioInf pd expr
     return (getChNum car_lam, pd', ioInf')
@@ -115,13 +120,18 @@ deconsCc ioInf d expr = return (car %: expr, cdr %: expr, d, ioInf)
     cdr = Nm "S" %: Nm "I" %: (Nm "K" %: (Nm "K" %: Nm "I"))
 
 -- | コンビネータ表現のChurch数から、整数取得。
-toIntCc :: (IoInfo -> ProgDot -> LamExpr -> IO (Maybe Int, ProgDot, IoInfo))
+toIntCc :: IoInfo
+        -> ProgDot
+        -> LamExpr
+        -> IO (Either String Int, ProgDot, IoInfo)
 toIntCc ioInf pd expr = do
     (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $
-                                                    expr %: Nm "plus1" %: V 0
+                                                    expr %: Nm "+1" %: V 0
     case car_cc of
-        V n -> return (Just n, pd', ioInf')
-        _   -> return (Nothing, pd', ioInf')
+        V n -> return (Right n, pd', ioInf')
+        e   -> return (Left $
+                takeStringified $ toNamedString def{nmPolicy=PK_index} e
+                        , pd', ioInf')
 
 -- | RedResult を返す関数のIO周りの対応 (遅延入力対応)
 --
