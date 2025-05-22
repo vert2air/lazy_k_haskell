@@ -201,24 +201,23 @@ red_ccN :: IoInfo
         -> RedResult LamExpr
 red_ccN ioInf d e = case once of
     -- 停止したのなら、続けても無駄。
-    s@(RedStop _d _ _)                                  -> s
+    RedStop _d _ _                                       -> once
     -- 既に入力promiseに当たったのなら、続けても無駄。
-    p@(RedProg _d ix   _)                   | ix >= 0   -> p
+    RedProg _d ix   _                        | ix >= 0   -> once
     -- 次に入力promiseに当たるのが分かっているのなら、続けても無駄。
-    p@(RedProg _d _    (In _))                          -> p
-    p@(RedProg _d _    (App _ (In _) _))                -> p
+    RedProg _d _    (In _)                               -> once
+    RedProg _d _    (App _ (In _) _)                     -> once
     -- red_ccN 特有処理。Nm "+1" の簡約。
-    RedProg    d' _ e'@(App _ (Nm "+1")  _)             -> red_ccN ioInf d' e'
-    RedProg    d' _ e'@(App _ (Nm "I") _)               -> red_ccN ioInf d' e'
-    p@(RedProg _  _    (App _ (Nm _) _))                -> p
-    RedProg    d' _ e'@(App _ (App _ (Nm "K") _x) _y)   -> red_ccN ioInf d' e'
-    RedProg    d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y)
-                                                        -> red_ccN ioInf d' e'
-    p@(RedProg _  _    (App _ (App _ (Nm _) _x) _y))    -> p
-    RedProg    d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
-                                                        -> red_ccN ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "+1")  _)                 -> red_ccN ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "I") _)                   -> red_ccN ioInf d' e'
+    RedProg _  _    (App _ (Nm _) _)                     -> once
+    RedProg d' _ e'@(App _ (App _ (Nm "K") _x) _y)       -> red_ccN ioInf d' e'
+    RedProg d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y) -> red_ccN ioInf d' e'
+    RedProg _  _    (App _ (App _ (Nm _) _x) _y)         -> once
+    RedProg d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
+                                                         -> red_ccN ioInf d' e'
     -- 戻って簡約出来るパターンはチェック済みなので、一旦、return
-    p@(RedProg _  _ _)                                 -> p
+    RedProg _d _ _                                       -> once
   where
     once = red_ccN_1 ioInf d e
 
