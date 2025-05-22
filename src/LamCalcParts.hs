@@ -208,7 +208,7 @@ red_ccN ioInf d e = case once of
     p@(RedProg _d _    (In _))                          -> p
     p@(RedProg _d _    (App _ (In _) _))                -> p
     -- red_ccN 特有処理。Nm "+1" の簡約。
-    RedProg    d' _ e'@(App _ (Nm "+1") (V _))          -> red_ccN ioInf d' e'
+    RedProg    d' _ e'@(App _ (Nm "+1")  _)             -> red_ccN ioInf d' e'
     RedProg    d' _ e'@(App _ (Nm "I") _)               -> red_ccN ioInf d' e'
     p@(RedProg _  _    (App _ (Nm _) _))                -> p
     RedProg    d' _ e'@(App _ (App _ (Nm "K") _x) _y)   -> red_ccN ioInf d' e'
