@@ -140,7 +140,8 @@ toIntCc ioInf pd expr = do
 --
 --   - case-1. 入力プロミスの不足が発生: 補充の為のblockingと補充。
 --   - case-2. 進捗dotの表示の為の中断が発生: 進捗dotを表示。
-careIoInfo :: (IoInfo -> ProgDot -> e -> RedResult e)
+careIoInfo :: (Show e)
+            => (IoInfo -> ProgDot -> e -> RedResult e)
             -> IoInfo   -- ^ 入力情報と出力関係のオプション
             -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
             -> e   -- ^ 簡約対象のラムダ式
@@ -170,31 +171,31 @@ careIoInfo f ioInf d expr = do
                 return (forceProg red, ioInf'')
             | ix < 0 -> do
                 -- 遅延入力に当たらず、簡約が進んだ。
-                -- putStrLn "---------------> RedProg minus"
+                -- putStrLn $ "---------------> RedProg minus " ++ show expr'
                 return (ret, ioInf)
             | otherwise -> do
                 -- 簡約が進んだが、遅延入力で止まった。
-                -- putStrLn "---------------> RedProg Plus"
+                -- putStrLn $ "---------------> RedProg Plus " ++ show expr'
                 ioInf' <- pollInput ix ioInf
                 (red, ioInf'') <- careIoInfo f ioInf' pd expr'
                 return (forceProg red, ioInf'')
-        RedStop pd ix _
+        RedStop pd ix expr'
             | isPdMature 1 ioInf pd -> do
                 -- 返ってきた理由は、beta簡約の回数が基準に達したからだった。
                 hPutStr stderr "."  -- 進捗dotの表示
                 hFlush stderr
                 careIoInfo f ioInf (clearPd 1 pd) expr
             | ix < 0 -> do
-                -- putStrLn "---------------> RedStop minus"
+                -- putStrLn $ "---------------> RedStop minus " ++ show expr'
                 return (RedStop pd ix expr, ioInf) -- 元のexprを使用。
             | otherwise -> do
-                -- putStrLn "---------------> RedStop Plus"
-                -- putStrLn . show $ ret
+                -- putStrLn $ "---------------> RedStop Plus " ++ show expr'
                 ioInf' <- pollInput ix ioInf
                 careIoInfo f ioInf' pd expr    -- 元のexprを使用。
 
 -- | 変化しなくなるまで、指定された関数の適用を繰り返す (遅延入力対応)
-untilStopInput :: (IoInfo -> ProgDot -> e -> RedResult e)
+untilStopInput :: (Show e)
+                => (IoInfo -> ProgDot -> e -> RedResult e)
                 -> IoInfo   -- ^ 入力情報と出力関係のオプション
                 -> ProgDot   -- ^ 進捗dot用。beta簡約を実行した回数。
                 -> e   -- ^ 簡約対象のラムダ式

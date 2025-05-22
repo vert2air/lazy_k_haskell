@@ -29,7 +29,11 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
                                 --   大文字小文字を区別し自由変数。
             | Jot !Int String   -- ^ Jot式。"0" "1" からなる文字列。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
-        deriving (Eq, Show)
+        deriving (Eq)
+
+instance Show LamExpr where
+    -- red_ccN から呼ばれるケースでも使いたいので、PK_indexを採用。
+    show = takeStringified . toNamedString def { nmPolicy = PK_index }
 
 instance Arbitrary LamExpr where
     arbitrary = oneof [
@@ -351,13 +355,13 @@ getFreeVars _       _ = (S.empty, S.empty, S.empty)
 -- 入力プロミスは、'<'+数字 (0以上) で表示されている。
 --
 -- >>> readLazyK "dummy title" "λ n" -- 無名ラムダと名前付き変数の組合せ
--- Right (L 2 (Nm "n"))
+-- Right λ n
 -- >>> readLazyK "dummy title" "λxy.x"
--- Right (L 3 (L 2 (V 2)))
+-- Right λ λ _2
 -- >>> readLazyK "dummy title" "λxy.y"
--- Right (L 3 (L 2 (V 1)))
+-- Right λ λ _1
 -- >>> readLazyK "dummy title" "\\xx.x"  -- シャドーイングされるケース
--- Right (L 3 (L 2 (V 1)))
+-- Right λ λ _1
 readLazyK :: String -- ^ 読み込むソースのタイトル
         -> String   -- ^ 読み込むソースの内容
         -> Either String LamExpr
@@ -698,11 +702,11 @@ makeChuchNum ix = la . la . applyN ix (V 2 %:) $ V 1
 -- 変化しない場合は Nothing を返す。
 --
 -- >>> subst 1 (V 3) (V 1 %: V 2)    -- (λ _1_2)_3
--- Just (App 3 (V 3) (V 1))
+-- Just _3_1
 -- >>> subst 1 (V 3) (V 1 %: la (V 2))
--- Just (App 4 (V 3) (L 2 (V 4)))
+-- Just _3(λ _4)
 -- >>> subst 2 (V 3) (V 1 %: V 5 %: V 2)
--- Just (App 5 (App 3 (V 1) (V 4)) (V 3))
+-- Just _1_4_3
 subst :: Int            -- ^ De Bruijn index of variable to be replaced
     -> LamExpr          -- ^ expression by which the variable is replaced
     -> LamExpr          -- ^ whole expression
@@ -743,9 +747,9 @@ betaRedCC _      = Nothing
 -- Abstraction Elimination
 --
 -- >>> abstElim (la $ Nm "t" %: V 1)  -- λx.tx eta簡約
--- Just (Nm "t")
+-- Just t
 -- >>> abstElim $ la . la $ (la $ V 2) %: V 1  -- λxy.(λz.y)y = λxy.y  K(SKI)
--- Just (App 7 (Nm "K") (App 5 (App 3 (Nm "S") (Nm "K")) (Nm "I")))
+-- Just K(SKI)
 abstElim :: LamExpr
     -> Maybe LamExpr -- ^ if cannot more Elimination, this returns Nothing
 abstElim (Nm _)      = Nothing   -- Rule 1
