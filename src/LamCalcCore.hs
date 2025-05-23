@@ -732,18 +732,6 @@ deepen _    (Jot _ _)   = Nothing
 deepen _    (In _)      = Nothing
 
 -- |
--- Beta Reduction on Combinator-Calculus Level
-betaRedCC :: LamExpr
-          -> Maybe LamExpr -- ^ if cannot more reduction, this returns Nothing
-betaRedCC (App _ (Nm "I") e)                     = Just e
-betaRedCC (App _ (App _ (Nm "K") x) _)           = Just x
-betaRedCC (App _ (App _ (App _ (Nm "S") x) y) z) = Just $ (x %: z) %: (y %: z)
-betaRedCC (App _ x y) = maybe ((x %:) <$> betaRedCC y)
-                               (Just . (%: y))        $ betaRedCC x
-betaRedCC (Nm _) = Nothing
-betaRedCC _      = Nothing
-
--- |
 -- Abstraction Elimination
 --
 -- >>> abstElim (la $ Nm "t" %: V 1)  -- λx.tx eta簡約
