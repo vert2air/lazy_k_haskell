@@ -1,25 +1,32 @@
+{-# LANGUAGE NumericUnderscores #-}
+
 module QuickCheckTests where
 
 import Data.Default (Default(..))
 import Test.QuickCheck (Args(..), Result(..), Property,
-                        (==>), quickCheckWithResult, stdArgs)
+                        (==>), quickCheckWithResult, stdArgs, within)
 
 import LamCalcCore (LamExpr(..), NameManager(..), Stringifying(..), IoInfo(..)
                     , ProgDot(..), RedResult(..)
                     , reduct, isPdMature, toLambda
                     , abstElim, toNamedString, readLazyK, comple)
 
-qc_main :: IO [Result]
-qc_main = do
-    let args = stdArgs { maxSuccess = 1000, maxSize = 1000 }
-    res_rw <- quickCheckWithResult args prop_toNamedString_readLazyK
-    res_b <- quickCheckWithResult args prop_reduction
-    res_a <- quickCheckWithResult args prop_abst_elim
-    return [res_rw, res_b, res_a]
+-- | QuickCheck の実行時間上限。[マイクロ秒]
+-- 簡約により式が膨らみ続けるケースに備え、時間で打ち切る。
+timeLimit :: Int
+timeLimit = 10_000_000
 
 -- | beta簡約の上限回数。この回数に達した場合、収束しない式と判断する。
 redLimit :: Int
 redLimit = 10000
+
+qc_main :: IO [Result]
+qc_main = do
+    let args = stdArgs { maxSuccess = 1000, maxSize = 1000 }
+    res_rw <- quickCheckWithResult args prop_toNamedString_readLazyK
+    res_b <- quickCheckWithResult args $ within timeLimit $ prop_reduction
+    res_a <- quickCheckWithResult args $ within timeLimit $ prop_abst_elim
+    return [res_rw, res_b, res_a]
 
 -- | toNamedString の結果が readLazyK で元に戻ること。
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Property
