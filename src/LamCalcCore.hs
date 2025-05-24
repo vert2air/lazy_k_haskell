@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 
 {- |
   Module      : LamCalcCore
@@ -29,6 +30,7 @@ data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
                                 --   大文字小文字を区別し自由変数。
             | Jot !Int String   -- ^ Jot式。"0" "1" からなる文字列。
             | In  !Int          -- ^ Inputプロミスの何byte目か。0から始まる。
+            | Num !Int          -- ^ 数値。整数。Church数を整数に変換時に使用。
         deriving (Eq)
 
 instance Show LamExpr where
@@ -166,11 +168,11 @@ toNamedString mng (V v) = Stringifying name SK_General mng
   where
     name = case v <= length (nmStack mng) of
             True
-                | v == 0                 -> '_' : show v  -- red_ccN用の処理
                 | (nmStack mng !! (v - 1)) /= ' ' -> [nmStack mng !! (v - 1)]
             -- De Bruijn index は先頭に'_'を付ける。
             _                                     -> '_' : show v
 toNamedString mng (In ix) = Stringifying ("<" ++ show ix) SK_General mng
+toNamedString mng (Num n) = Stringifying ("#" ++ show n)  SK_General mng
 toNamedString mng e@(L _ _) =
                     Stringifying ((nmLamSign mng):str_ret) style_ret mng_ret
   where
@@ -442,6 +444,7 @@ toLambda (Jot _ j)   = foldl jotToLam ccI j
 toLambda (L _ le)    = la $ toLambda le
 toLambda (App _ m n) = toLambda m %: toLambda n
 toLambda e@(In _)    = e  -- 変換できないので、そのまま。
+toLambda e@(Num _)   = e  -- 変換できないので、そのまま。
 
 ccI, ccK, ccS, iota :: LamExpr
 ccI  = la $ V 1
@@ -481,7 +484,8 @@ instance Applicative RedResult where
     RedStop dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
     RedProg dF i f <*> RedStop dE j e = RedProg (dF + dE) (max i j) (f e)
     RedProg dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
-
+{-
+-- 使ってないので、コメントアウト。
 instance Monad RedResult where
     RedStop dE i e >>= f = case f e of
         RedStop dF j e' -> RedStop (dE + dF) (max i j) e'
@@ -489,7 +493,7 @@ instance Monad RedResult where
     RedProg dE i e >>= f = case f e of
         RedStop dF j e' -> RedProg (dE + dF) (max i j) e'
         RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
-
+-}
 -- | RedResult の中の式を取り出す。
 takeExpr :: RedResult e -> e
 takeExpr (RedStop _ _ e) = e
@@ -590,46 +594,44 @@ reduct :: IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
--- 進捗Dotのチェック
-reduct ioInf d e | isPdMature 1 ioInf d = RedStop d (-1) e
--- eta簡約
-reduct ioInf d (L _ (App _ fun (V 1)))
-    | not (hasVar 1 fun) =
-        forceProg $ reduct ioInf d $ comple (shallow 1) fun
--- 以降は、beta簡約
-reduct ioInf d              (L _ le)    = la <$> reduct ioInf d le
-reduct ioInf d              (App _ (L _ le) e) = case once of
-    -- beta簡約の結果が、再び関数適用だった。
-    -- ここまで簡約出来る箇所が無かった結果ここで簡約を行ったので、
-    -- 先頭から見直しても結局ここに戻ってくる。
-    -- それは無駄なので、ここから reduct を継続する。
-    App _ _ _ -> incPd 1 . forceProg $ reduct ioInf d once
-    _         -> incPd 1 . forceProg . incPds d $ pure once
+reduct ioInf d e = case once of
+    -- 停止したのなら、続けても無駄。
+    RedStop _  _  _                -> once
+    -- 既に入力promiseに当たったのなら、続けても無駄。
+    RedProg _  ix _    | ix >= 0    -> once
+    -- 進捗Dotのカウンタが満たされたのなら、即return。
+    RedProg d' _  _   | isPdMature 1 ioInf d' -> once
+    -- 次に入力promiseに当たるのが分かっているのなら、続けても無駄。
+    RedProg d' ix   (In _)
+        -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
+        -- In がリストに変わるので、RedProg を返す。
+        -- 先頭のInは解消されているので、indexは-1にしておく。
+        | ioInf.inEof || ix < length ioInf.inHist ->
+            RedProg d' (-1) $ buildInput ioInf ix
+        -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
+        | otherwise                          -> once
+    RedProg d' ix   (App _ (In _) oprd)
+        -- 現時点で展開可能な入力があるので、それを使って続行。
+        | ioInf.inEof || ix < length ioInf.inHist ->
+            forceProg $ reduct ioInf d' $ buildInput ioInf ix %: oprd
+        -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
+        | otherwise                          -> once
+
+    RedProg d' _ e'@(App _ (Nm "+1")  _)                 -> reduct ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "I") _)                   -> reduct ioInf d' e'
+    -- 戻ったら簡約出来る可能性あり。戻る。
+    RedProg _  _    (App _ (Nm _) _)                     -> once
+    RedProg d' _ e'@(App _ (App _ (Nm "K") _x) _y)       -> reduct ioInf d' e'
+    RedProg d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y) -> reduct ioInf d' e'
+    -- 戻ったら簡約出来る可能性あり。戻る。
+    RedProg _  _    (App _ (App _ (Nm _) _x) _y)         -> once
+    RedProg d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
+                                                         -> reduct ioInf d' e'
+    -- β簡約が見えている。
+    RedProg d' _  e'@(App _ (L _ _) _)                   -> reduct ioInf d' e'
+    RedProg _  _    _                                    -> once
   where
-    once = comple (subst 1 e) le
-reduct ioInf@(IoInfo eof input _ _ _ _) d e@(App _ (In ix) oprd)
-    -- 現時点で展開可能な入力があるので、それを使って続行。
-    | eof || ix < length input =
-        forceProg $ reduct ioInf d $ buildInput ioInf ix %: oprd
-    -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
-    | otherwise = RedStop d ix e
-reduct ioInf            d e@(App _ x y) = case reduct ioInf d x of
-    RedStop d' i _
-        | isPdMature 1 ioInf d' -> RedStop d' i e
-        | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
-        | otherwise  -> RedStop def i (x %:) <*> reduct ioInf d' y
-    -- x で進展があったものの、関数適用であることには変わりない。
-    -- しかし、x が (L _ _) なら、beta簡約可能。
-    RedProg d' _ e'@(L _ _) -> forceProg $ reduct ioInf d' (e' %: y)
-    -- そうでなければ、一旦行けるところまで行ったので、戻る。
-    x'                ->  (%:) <$> x' <*> pure y
-reduct ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
-    -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
-    -- In がリストに変わるので、RedProg を返す。
-    | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
-    -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
-    | otherwise = RedStop d ix e
-reduct _ d e            = incPds d $ return e     -- V and Nm
+    once = red_1 ioInf d e
 
 {- | Beta/Eta簡約の実行 (入力の遅延評価対応)
 
@@ -642,33 +644,57 @@ red_1 :: IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
--- eta簡約
-red_1 _ioInf d (L _ (App _ fun (V 1)))
-    | not (hasVar 1 fun) =
-        RedProg d (-1) $ comple (shallow 1) fun
--- 以降は、beta簡約
-red_1 ioInf d              (L _ le)    = la <$> red_1 ioInf d le
-red_1 _ioInf d             (App _ (L _ le) e) =
-    incPd 1 . RedProg d (-1) $ comple (subst 1 e) le
-red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
-    -- 現時点で展開可能な入力があるので、それを使って続行。
-    | eof || ix < length input =
-        forceProg $ red_1 ioInf d $ App s (buildInput ioInf ix) oprd
-    -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
-    | otherwise = RedStop d ix e
-red_1 ioInf            d e@(App _ x y) = case red_1 ioInf d x of
-    RedStop d' i _
-        | isPdMature 1 ioInf d' -> RedStop d' i e
-        | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
-        | otherwise  -> RedStop def i (x %:) <*> red_1 ioInf d' y
-    x'                ->  (%:) <$> x' <*> pure y
+-- 進捗Dotのチェック
+-- これ不要。
+-- red_1  ioInf d e | isPdMature 1 ioInf d = RedStop d (-1) e
+
+-- 入力promiseの当たりをチェック
 red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
     -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
     | otherwise = RedStop d ix e
-red_1 _ d e            = incPds d $ return e     -- V and Nm
+red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
+    -- 現時点で展開可能な入力があるので、それを使って続行。
+    | eof || ix < length input =
+        forceProg $ red_1 ioInf d $ App s (buildInput ioInf ix) oprd
+    -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
+    | otherwise = RedStop d ix e
+
+-- CC式の簡約
+red_1 _io d (App _ (Nm "+1") (Num n))            = RedProg d (-1) . Num $ n + 1
+red_1 _io d (App _ (Nm "I") x)                   = RedProg d (-1) x
+red_1 _io d (App _ (App _ (Nm "K") x) _y)        = RedProg d (-1) x
+red_1 _io d (App _ (App _ (Nm "S") (Nm "K")) _y) = RedProg d (-1) $ Nm "I"
+red_1 _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z) = RedProg d (-1) z
+-- CCの簡約でより複雑になるのは、このパターンだけ。ここだけ incPd する。
+red_1 _io d (App _ (App _ (App _ (Nm "S") x) y) z)
+                                = incPd 1 . RedProg d (-1) $ x %: z %: (y %: z)
+
+-- eta簡約
+red_1 _ioInf d (L _ (App _ fun (V 1)))
+    | not (hasVar 1 fun) =
+        RedProg d (-1) $ comple (shallow 1) fun
+
+-- 以降は、beta簡約
+red_1 ioInf d              (L _ le)    = la <$> red_1 ioInf d le
+red_1 _ioInf d             (App _ (L _ le) e) =
+    incPd 1 . RedProg d (-1) $ comple (subst 1 e) le
+
+red_1 ioInf            d e@(App _ x y) = case red_1 ioInf d x of
+    RedStop d' i _
+        | isPdMature 1 ioInf d' -> RedStop d' i e
+        | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
+        -- | otherwise  -> RedStop def i (x %:) <*> red_1 ioInf d' y
+        -- ↑遅い。↓速い。かなり違いがある。
+        | otherwise  -> (x %:) <$> red_1 ioInf d' y
+    -- x'                ->  (%:) <$> x' <*> pure y
+    -- ↑だと重いのかも。↓で試す。
+    x'                ->  (%: y) <$> x'
+-- red_1 _ d e            = incPds d $ pure e     -- V and Nm
+-- ↑だと重いのかも。↓で試す。
+red_1 _ d e            = RedStop d (-1) e -- incPds d $ pure e     -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
 buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
@@ -720,6 +746,7 @@ subst vIdx e (App _ m n) = mergeApp (subst vIdx e) m n
 subst _    _ (Nm _)      = Nothing
 subst _    _ (Jot _ _)   = Nothing
 subst _    _ (In _)      = Nothing
+subst _    _ (Num _)     = Nothing
 
 deepen :: Int ->  LamExpr -> Maybe LamExpr
 deepen vIdx (V v)
@@ -730,6 +757,7 @@ deepen vIdx (App _ m n) = mergeApp (deepen vIdx) m n
 deepen _    (Nm _)      = Nothing
 deepen _    (Jot _ _)   = Nothing
 deepen _    (In _)      = Nothing
+deepen _    (Num _)     = Nothing
 
 -- |
 -- Abstraction Elimination
@@ -744,6 +772,7 @@ abstElim (Nm _)      = Nothing   -- Rule 1
 abstElim (V _)       = Nothing   -- Rule 1
 abstElim (Jot _ _)   = Nothing   -- Rule 1
 abstElim (In _)      = Nothing   -- Rule 1  内容は不明なので、そのままにする。
+abstElim (Num _)     = Nothing   -- Rule 1  内容は不明なので、そのままにする。
 abstElim (App _ m n) = mergeApp abstElim m n    -- Rule 2
 abstElim (L _ le)
     | not (hasVar 1 le)  =      -- 3. T[\x.E] => K T[E] if x is NOT free in E
@@ -761,24 +790,24 @@ abstElim (L _ (App _ m (V 1)))
 abstElim (L _ (App _ m n)) =
     Just $ Nm "S" %: comple abstElim (la m) %: comple abstElim (la n) -- Rule 6
 abstElim (L _ (In _)) = Nothing
+abstElim (L _ (Num _)) = Nothing
 
+-- | 指定した de Bruijn index の変数が式の中に存在するか
 hasVar :: Int -> LamExpr -> Bool
-hasVar _    (Nm _)      = False
 hasVar vIdx (V v)       = vIdx == v
 hasVar vIdx (L _ le)    = hasVar (vIdx + 1) le
 hasVar vIdx (App _ m n) = hasVar vIdx m || hasVar vIdx n
-hasVar _    (Jot _ _)   = False
-hasVar _    (In _)      = False
+hasVar _    _           = False
 
+-- | 指定した de Bruijn index のラムダ抽象を除去する際に、
+-- それ以上の変数のindexを 1 詰める。
 shallow :: Int -> LamExpr -> Maybe LamExpr
-shallow _ (Nm _) = Nothing
 shallow vIdx (V v)
     | v > vIdx  = Just $ V (v - 1)
     | otherwise = Nothing
 shallow vIdx (L _ le)    = la <$> shallow (vIdx + 1) le
 shallow vIdx (App _ m n) = mergeApp (shallow vIdx) m n
-shallow _    (Jot _ _)   = Nothing
-shallow _    (In _)      = Nothing
+shallow _    _           = Nothing
 
 {-
  - Common Utility Functions

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {- |
   Module      : LamCalcParts
   Description : ラムダ計算で頻出のデータや処理。
@@ -13,7 +14,7 @@ import Data.Map.Merge.Lazy (merge, preserveMissing, zipWithMatched)
 
 import LamCalcCore (LamExpr(..), IoInfo(..), ProgDot(..), RedResult(..)
                     , la, (%:), readLazyK, forceProg, incPd, takeStringified
-                    , toNamedString)
+                    , toNamedString, isPdMature)
 
 data Stat = Stat
     { maxDepth :: !Int
@@ -30,6 +31,7 @@ data Stat = Stat
     , freeVar_index :: M.Map Int  Int
     , freeVar_named :: M.Map Char Int
     , input_promise :: M.Map Int  Int
+    , church_number :: M.Map Int  Int
     } deriving (Show)
 
 instance Default Stat where
@@ -48,6 +50,7 @@ instance Default Stat where
         , freeVar_index = M.empty
         , freeVar_named = M.empty
         , input_promise = M.empty
+        , church_number = M.empty
         }
 
 (%) :: Stat -> Stat -> Stat
@@ -66,6 +69,7 @@ a % b = Stat
     , freeVar_index = freeVar_index a `addEach` freeVar_index b
     , freeVar_named = freeVar_named a `addEach` freeVar_named b
     , input_promise = input_promise a `addEach` input_promise b
+    , church_number = church_number a `addEach` church_number b
     }
 
 -- | 補助関数(内部用) : M.Map k Int で、キー毎に値を加算
@@ -108,6 +112,7 @@ stat _    (Jot _ jot) = def { cnt_Jot_0 = s0, cnt_Jot_1 = s1 }
     aux (c0, c1) _   = (c0    , c1 + 1)
     (s0, s1) = foldl aux (0, 0) jot
 stat _    (In idx)    = def { input_promise = M.singleton idx 1 }
+stat _    (Num idx)   = def { church_number = M.singleton idx 1 }
 
 lc_true, lc_false, if_then_else, lc_and, lc_or, lc_not :: LamExpr
 lc_true = la . la $ V 2
@@ -204,9 +209,30 @@ red_ccN ioInf d e = case once of
     RedStop _d _ _                                       -> once
     -- 既に入力promiseに当たったのなら、続けても無駄。
     RedProg _d ix   _                        | ix >= 0   -> once
+
+    -- 進捗Dotのカウンタが満たされたのなら、即return。
+    RedProg d' _  _   | isPdMature 1 ioInf d' -> once
+
     -- 次に入力promiseに当たるのが分かっているのなら、続けても無駄。
-    RedProg _d _    (In _)                               -> once
-    RedProg _d _    (App _ (In _) _)                     -> once
+    -- RedProg _d _    (In _)                               -> once
+    -- RedProg _d _    (App _ (In _) _)                     -> once
+
+    RedProg d' ix   (In _)
+        -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
+        -- In がリストに変わるので、RedProg を返す。
+        -- 先頭のInは解消されているので、indexは-1にしておく。
+        | ioInf.inEof || ix < length ioInf.inHist ->
+            RedProg d' (-1) $ buildInputCC ioInf ix
+        -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
+        | otherwise                          -> once
+    RedProg d' ix   (App _ (In _) oprd)
+        -- 現時点で展開可能な入力があるので、それを使って続行。
+        | ioInf.inEof || ix < length ioInf.inHist ->
+            forceProg $ red_ccN ioInf d' $ buildInputCC ioInf ix %: oprd
+        -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
+        | otherwise                          -> once
+
+
     -- red_ccN 特有処理。Nm "+1" の簡約。
     RedProg d' _ e'@(App _ (Nm "+1")  _)                 -> red_ccN ioInf d' e'
     RedProg d' _ e'@(App _ (Nm "I") _)                   -> red_ccN ioInf d' e'
@@ -229,9 +255,18 @@ red_ccN_1 :: IoInfo
         -> ProgDot
         -> LamExpr
         -> RedResult LamExpr
+
+-- ↓遅い原因の一つ。カウンタ満了なら、そもそも呼ばないだろ。
+-- 進捗Dotのカウンタが満たされたのなら、即return。
+-- red_ccN_1 ioInf d  e   | isPdMature 1 ioInf d = RedStop d (-1) e
+
+-- 入力promiseの当たりをチェック
 red_ccN_1 ioInf d e@(In ix)
     | inEof ioInf || ix < length (inHist ioInf)
-        = forceProg $ red_ccN_1 ioInf d $ buildInputCC ioInf ix
+        -- = forceProg $ red_ccN_1 ioInf d $ buildInputCC ioInf ix
+        -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
+        -- In がリストに変わるので、RedProg を返す。
+        = RedProg d (length ioInf.inHist) $ buildInputCC ioInf ix
     | otherwise                                 = RedStop d ix e
 red_ccN_1 ioInf d e@(App _ (In ix) oprd)
     | inEof ioInf || ix < length (inHist ioInf)
@@ -247,10 +282,20 @@ red_ccN_1 _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z)
 red_ccN_1 _io d (App _ (App _ (App _ (Nm "S") x) y) z)
                                 = incPd 1 . RedProg d (-1) $ x %: z %: (y %: z)
 red_ccN_1 ioInf d (App _ f o) = case f' of
-    e@(RedStop _ i _)
+    e@(RedStop d' i _)
+        -- StopでMature見る意味ある？ red_1 と揃えるために、入れてみる。
+        | isPdMature 1 ioInf d -> e
         | i >= 0 -> (%: o) <$> e    -- ToDo ここから
-    RedStop d' _i _   -> (f %:) <$> red_ccN_1 ioInf d' o
-    RedProg d' i  f'' -> RedProg d' i $ f'' %: o
+        | otherwise -> (f %:) <$> red_ccN_1 ioInf d' o
+    -- RedStop d' _i _   -> (f %:) <$> red_ccN_1 ioInf d' o
+    -- 元々の式が↓。特に重くない。
+    -- RedProg d' i  f'' -> RedProg d' i $ f'' %: o
+    -- これだと、特に重くない。
+    x                 -> (%: o) <$> x
+    -- 様々な applicative style が尽く重い。何故？
+    -- x                 -> (%:) <$> x <*> pure o
+    -- RedProg _ _ _     -> (%:) <$> f' <*> pure o
+    -- e@(RedProg _ _ _) -> (%:) <$> e <*> pure o
   where
     f' = red_ccN_1 ioInf d f
 red_ccN_1 _io d e = RedStop d (-1) e

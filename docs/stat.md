@@ -42,6 +42,7 @@ x    z  y    z
   * Input Promise (0 origin): <br> 以降は、入力promiseの統計情報。
     * index <0  <br> 入力の何バイト目を参照しているか。
     * index <2  <br> 何バイト目かは、0オリジンで指定する。
+  * Church Number (0 origin): <br> 以降は、数値への変換時に使用すデータの統計情報。
 
 ## example
 

@@ -16,7 +16,7 @@ import System.Environment (getArgs)
 import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
-import LazyKParts (deconsLoopLc, deconsLoopCc, onlyV)
+import LazyKParts (deconsLoopLc, deconsLoopCc, onlyV, toCcStyle)
 
 data Flag = MaxOut Int
           | ToLam Bool
@@ -105,7 +105,7 @@ lazy toLam ioInf maxOut srcFile = do
         Right a -> do
             if toLam
                 then deconsLoopLc ioInf def maxOut . toLambda $ a %: In(0)
-                else deconsLoopCc ioInf def maxOut $ a %: In(0)
+                else deconsLoopCc ioInf def maxOut . toCcStyle $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
             return $ ExitFailure 1

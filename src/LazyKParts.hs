@@ -125,9 +125,10 @@ toIntCc :: IoInfo
         -> LamExpr
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntCc ioInf pd expr = do
-    (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $
-                                                    expr %: Nm "+1" %: V 0
+    -- (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $ expr %: Nm "+1" %: V 0
+    (car_cc, pd', ioInf') <- untilStopInput reduct ioInf pd $ expr %: Nm "+1" %: Num 0
     case car_cc of
+        Num n -> return (Right n, pd', ioInf')
         V n -> return (Right n, pd', ioInf')
         e   -> return (Left $
                 takeStringified $ toNamedString def{nmPolicy=PK_index} e
@@ -224,6 +225,10 @@ pollInput ix ioInf = do
     let newHist = if eof' && length add < lack
         then inHist ioInf ++ add ++ take (lack - length add) [256, 256..]
         else inHist ioInf ++ add
+    onlyV ioInf $
+        hPutStrLn stderr $ "  pollInput: eof =" ++ show eof'
+                        ++ ", got len=" ++ show (length add)
+                        ++ ", ix=" ++ show ix
     return $ ioInf { inEof = eof', inHist = newHist }
 
 -- | pollInput の補助関数。指定byte数を取得する。
@@ -258,6 +263,7 @@ jotS = "11111000"
 -- 変換の対象は、IotaとJotスタイルの部分のみ
 toCcStyle :: LamExpr -> LamExpr
 toCcStyle (L _ lexp) = la $ toCcStyle lexp
+toCcStyle (Nm "iota") = la $ V 1 %: Nm "S" %: Nm "K"
 toCcStyle (App _ (Nm "iota") (Nm "iota")) = Nm "I"
 toCcStyle (App _ (Nm "iota")
             (App _ (Nm "iota")
@@ -272,8 +278,16 @@ toCcStyle expr = expr
 
 jotToCcStyle :: String -> LamExpr
 jotToCcStyle jot = case parse jexprs "jotToCcStyle" $ jotToCcStr jot of
-    Left _ -> Jot (length jot) jot
+    Left _ -> foldl jotToCc (Nm "I") jot
     Right e -> e
+
+-- | Jotスタイルの式をCCの予約関数とラムダ抽象に変換
+--
+-- jotToCcStr で Left の場合、ラムダ抽象混じりで変換する。
+jotToCc :: LamExpr -> Char -> LamExpr
+jotToCc e '0' = e %: Nm "S" %: Nm "K"
+jotToCc e '1' = la . la $ e %: V 2 %: V 1
+jotToCc e _   = error $ "Internal Error: Invalid Jot: " ++ show e
 
 jexprs, jexpr :: Parsec String u LamExpr
 
@@ -282,6 +296,9 @@ jexprs = foldl1 (%:) <$> many1 jexpr
 jexpr = Nm . (:[]) <$> oneOf "SKI"
     <|> char '1' *> return (%:) <*> jexpr <*> jexpr
 
+-- | Jotスタイルの文字列をCCスタイルの文字列に変換を試行。
+--
+-- 変換できればRight値、出来なければLeft値を返す。
 jotToCcStr :: String -> String
 jotToCcStr jot = case jot of
     '1':('1':('1':('1':('1':('1':('1':('1':('1':

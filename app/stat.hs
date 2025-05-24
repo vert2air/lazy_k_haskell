@@ -47,6 +47,8 @@ outputStat st = do
     printMap   "    named " w $ freeVar_named st
     putStrLn   "  Input Promise (0 origin):"
     printMap   "    input <" w $ input_promise st
+    putStrLn   "  Church Number (0 origin):"
+    printMap   "    num #" w $ church_number st
   where w = 10
 
 print1Item :: String -> Int -> Int -> IO ()
