@@ -22,11 +22,11 @@ import LamCalcParts (getChNum)
 
 -- | 純粋なラムダ式と、コンビネータ表現、それぞれの deconsLoop のsetup
 deconsLoopLc, deconsLoopCc ::
-               IoInfo       -- ^ 入力情報と出力関係のオプション
-            -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
-            -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
-            -> LamExpr      -- ^ 出力すべき Scott encoding のリスト
-            -> IO ExitCode  -- ^ プログラムの終了コード
+           IoInfo                -- ^ 入力情報と出力関係のオプション
+        -> ProgDot               -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> Maybe Int             -- ^ 出力するbyte数を指定。Nothingなら無限。
+        -> LamExpr               -- ^ 出力すべき Scott encoding のリスト
+        -> IO (ExitCode, [Int])  -- ^ プログラムの終了コードと出力
 deconsLoopLc = deconsLoop deconsLc toIntLc
 deconsLoopCc = deconsLoop deconsCc toIntCc
 
@@ -40,6 +40,13 @@ deconsLoopCc = deconsLoop deconsCc toIntCc
 但し、consを分解する関数と、carを数値に変換する関数は、
 入力として与えられるので、式の表現や、もっと言えば式であるかさえも
 この関数は感知しない。
+
+>>> import Data.Either (fromRight)
+>>> import LamCalcCore (readLazyK)
+>>> src <- readFile "lazy/prime_numbers.lazy"
+>>> let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
+>>> _ <- deconsLoopCc def def (Just 3) $ expr %: In(0)
+2 3
 -}
 deconsLoop :: (IoInfo -> ProgDot -> e -> IO (e, e, ProgDot, IoInfo))
                         -- ^ 式を car/cdr に分割する関数
@@ -49,8 +56,8 @@ deconsLoop :: (IoInfo -> ProgDot -> e -> IO (e, e, ProgDot, IoInfo))
         -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
         -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
         -> e            -- ^ 出力すべき Scott encoding のリスト
-        -> IO ExitCode  -- ^ プログラムの終了コード
-deconsLoop _      _     _     _  (Just 0)  _    = return ExitSuccess
+        -> IO (ExitCode, [Int])  -- ^ プログラムの終了コードと、出力。
+deconsLoop _      _     _     _  (Just 0)  _    = return (ExitSuccess, [])
 deconsLoop decons toInt ioInf pd countdown expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
     (num, pd'', ioInf'') <- toInt ioInf' pd' car
@@ -66,16 +73,17 @@ deconsLoop decons toInt ioInf pd countdown expr = do
                          ++ "'  "++ show sec ++ " sec"
                 putChar $ chr n
                 hFlush stdout
-                deconsLoop decons toInt ioInf'' pd''
+                (ec, out) <- deconsLoop decons toInt ioInf'' pd''
                                                 (fmap (+(-1)) countdown) cdr
+                return (ec, n : out)
             | otherwise -> do
                 onlyV ioInf'' $
                     hPutStrLn stderr $ "Reach EOF (" ++ show n ++ ")"
-                return $ if n == 256 then ExitSuccess
-                                     else ExitFailure (n - 256)
+                return $ (if n == 256 then ExitSuccess
+                                      else ExitFailure (n - 256), [])
         Left e -> do
             hPutStrLn stderr $ "car is not number : " ++ e
-            return $ ExitFailure 1
+            return $ (ExitFailure 1, [])
 
 -- | expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
 deconsLc :: IoInfo   -- ^ 入力情報と出力関係のオプション
@@ -129,7 +137,6 @@ toIntCc ioInf pd expr = do
                                                 $ expr %: Nm "+1" %: Num 0
     case car_cc of
         Num n -> return (Right n, pd', ioInf')
-        V n -> return (Right n, pd', ioInf')
         e   -> return (Left $
                 takeStringified $ toNamedString def{nmPolicy=PK_index} e
                         , pd', ioInf')

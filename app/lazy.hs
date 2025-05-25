@@ -85,14 +85,14 @@ main = do
         ioInf = IoInfo False [] verbose dotFreq 'λ' startTime
     onlyV ioInf $
         hPutStrLn stderr $ "Start time : " ++ show startTime
-    exitCode <- lazy toLam ioInf maxOut srcFile
+    (exitCode, _) <- lazy toLam ioInf maxOut srcFile
     endTime <- getCPUTime
     onlyV ioInf $ do
         let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
         hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
     exitWith exitCode
 
-lazy :: Bool -> IoInfo -> Maybe Int -> String -> IO ExitCode
+lazy :: Bool -> IoInfo -> Maybe Int -> String -> IO (ExitCode, [Int])
 lazy toLam ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
     case readLazyK srcFile lazySrc of
@@ -102,4 +102,4 @@ lazy toLam ioInf maxOut srcFile = do
                 else deconsLoopCc ioInf def maxOut . toCcStyle $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
-            return $ ExitFailure 1
+            return $ (ExitFailure 1, [])
