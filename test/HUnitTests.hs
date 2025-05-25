@@ -8,14 +8,13 @@ import Data.Either (fromRight)
 import LamCalcCore (LamExpr(..), IoInfo(..)
                   , (%:), reductInf, toLambda, readLazyK)
 import LamCalcParts (getChNum)
-import LazyKParts (deconsLoopCc)
+import LazyKParts (deconsLoopCc, deconsLoopLc)
 import ShortChurchNum (shortChNum)
 
 hUnitAll :: IO Counts
 hUnitAll = do
     runTestTT tests
-    runTestTT $ TestList [test_lazy]
-    runTestTT $ TestList [test_add_A_B]
+    runTestTT $ TestList [test_lazy, test_add_A_B_Cc, test_add_A_B_Lc]
   where
     tests = TestList $ map (\n ->
         let title = ("Church number Test :" ++ show n)
@@ -37,10 +36,18 @@ test_lazy = TestCase $ do
     (_, out) <- deconsLoopCc def def (Just 6) $ expr %: In(0)
     assertEqual "lazy deconsLoopCc" out $ map ord "2 3 5 "
 
-test_add_A_B :: Test
-test_add_A_B = TestCase $ do
+test_add_A_B_Cc :: Test
+test_add_A_B_Cc = TestCase $ do
     src <- readFile "lazy/add_A_B.lazy"
     let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
     let ioInf = def {inEof = True, inHist = [7, 11]}
     (_, out) <- deconsLoopCc ioInf def Nothing $ expr %: In(0)
+    assertEqual "add_A_B deconsLoopCc" out [18]
+
+test_add_A_B_Lc :: Test
+test_add_A_B_Lc = TestCase $ do
+    src <- readFile "lazy/add_A_B.lazy"
+    let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
+    let ioInf = def {inEof = True, inHist = [7, 11]}
+    (_, out) <- deconsLoopLc ioInf def Nothing $ toLambda expr %: In(0)
     assertEqual "add_A_B deconsLoopCc" out [18]
