@@ -137,7 +137,6 @@ toIntCc ioInf pd expr = do
                                                 $ expr %: Nm "+1" %: Num 0
     case car_cc of
         Num n -> return (Right n, pd', ioInf')
-        V n -> return (Right n, pd', ioInf')
         e   -> return (Left $
                 takeStringified $ toNamedString def{nmPolicy=PK_index} e
                         , pd', ioInf')
