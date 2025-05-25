@@ -1,9 +1,6 @@
 -- {-# LANGUAGE DeriveDataTypeable #-}
 -- {-# OPTIONS_GHC -fno-cse #-}
 
--- import Prelude hiding (readFile, putStrLn, getArgs)
--- import System.IO.Encoding (readFile, putStrLn, getArgs)
--- import Data.Char (ord)
 import Data.Default (Default(..))
 import Data.List.Split (splitOn)
 -- import System.Console.CmdArgs ((&=), Data, Typeable, cmdArgs, help, args, name, typ, typFile)
@@ -16,7 +13,7 @@ import System.Environment (getArgs)
 import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
-import LazyKParts (deconsLoopLc, deconsLoopCc, onlyV)
+import LazyKParts (deconsLoopLc, deconsLoopCc, onlyV, toCcStyle)
 
 data Flag = MaxOut Int
           | ToLam Bool
@@ -60,18 +57,15 @@ argv = Argument
     { maxOut = 0 &= help "Max output count if > 0" &= typ "INT" &= name "max"
     , verbose = False       &= help "Verbose output" &= name "v"
     , progDotFreq = []  &= help "Progress dot" &= name "d" &= typ "[Int]"
-    -- , lazykFile = " "       &= help "LazyK source file" &= args &= typ "FILE"
     , lazykFile = " "       &= args &= typFile
     }
 -}
 main :: IO ()
--- main = print =<< cmdArgs argv
 main = do
     -- let ?enc = UTF8
     -- Windows では、Shellコマンド chcp で、UTF-8にしておく。
     -- /c/Windows/System32/chcp.com 65001
     (opts, [srcFile]) <- compileOpts =<< getArgs
-    -- putStrLn . show $ opts
     startTime <- getCPUTime
     let for = flip map
         forAny = flip any
@@ -105,7 +99,7 @@ lazy toLam ioInf maxOut srcFile = do
         Right a -> do
             if toLam
                 then deconsLoopLc ioInf def maxOut . toLambda $ a %: In(0)
-                else deconsLoopCc ioInf def maxOut $ a %: In(0)
+                else deconsLoopCc ioInf def maxOut . toCcStyle $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
             return $ ExitFailure 1

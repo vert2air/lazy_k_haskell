@@ -15,10 +15,10 @@ import Text.Parsec ((<|>), Parsec, char, many1, oneOf, parse)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
                 , (%:), la, reduct, forceProg, isPdMature, incPd, clearPd
-                , toNamedString, takeStringified
+                , toNamedString, takeStringified, buildInputLc, buildInputCc
                 , NameManager(..), PolicyKind(..)
                 )
-import LamCalcParts (getChNum, red_ccN)
+import LamCalcParts (getChNum)
 
 -- | 純粋なラムダ式と、コンビネータ表現、それぞれの deconsLoop のsetup
 deconsLoopLc, deconsLoopCc ::
@@ -42,14 +42,14 @@ deconsLoopCc = deconsLoop deconsCc toIntCc
 この関数は感知しない。
 -}
 deconsLoop :: (IoInfo -> ProgDot -> e -> IO (e, e, ProgDot, IoInfo))
-                            -- ^ 式を car/cdr に分割する関数
-            -> (IoInfo -> ProgDot -> e -> IO (Either String Int, ProgDot, IoInfo))
-                            -- ^ 式(car)を数値に変換する関数
-            -> IoInfo       -- ^ 入力情報と出力関係のオプション
-            -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
-            -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
-            -> e            -- ^ 出力すべき Scott encoding のリスト
-            -> IO ExitCode  -- ^ プログラムの終了コード
+                        -- ^ 式を car/cdr に分割する関数
+        -> (IoInfo -> ProgDot -> e -> IO (Either String Int, ProgDot, IoInfo))
+                        -- ^ 式(car)を数値に変換する関数
+        -> IoInfo       -- ^ 入力情報と出力関係のオプション
+        -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
+        -> e            -- ^ 出力すべき Scott encoding のリスト
+        -> IO ExitCode  -- ^ プログラムの終了コード
 deconsLoop _      _     _     _  (Just 0)  _    = return ExitSuccess
 deconsLoop decons toInt ioInf pd countdown expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
@@ -86,7 +86,7 @@ deconsLc ioInf d expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
     _ -> do
-        reded <- careIoInfo reduct ioInf d expr
+        reded <- careIoInfo (reduct buildInputLc) ioInf d expr
         case reded of
             (RedProg d' _ expr', ioInf') -> deconsLc ioInf' d' expr'
             ret@(RedStop d' ix expr', ioInf')
@@ -105,8 +105,8 @@ toIntLc :: IoInfo
         -> LamExpr
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntLc ioInf pd expr = do
-    (car_lam, pd', ioInf') <- untilStopInput reduct ioInf pd expr
-    return (getChNum car_lam, pd', ioInf')
+    (car, pd', ioInf') <- untilStopInput (reduct buildInputLc) ioInf pd expr
+    return (getChNum car, pd', ioInf')
 
 -- | deconsLc のコンビネータ版。
 -- expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
@@ -125,9 +125,10 @@ toIntCc :: IoInfo
         -> LamExpr
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntCc ioInf pd expr = do
-    (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $
-                                                    expr %: Nm "+1" %: V 0
+    (car_cc, pd', ioInf') <- untilStopInput (reduct buildInputCc) ioInf pd
+                                                $ expr %: Nm "+1" %: Num 0
     case car_cc of
+        Num n -> return (Right n, pd', ioInf')
         V n -> return (Right n, pd', ioInf')
         e   -> return (Left $
                 takeStringified $ toNamedString def{nmPolicy=PK_index} e
@@ -224,6 +225,10 @@ pollInput ix ioInf = do
     let newHist = if eof' && length add < lack
         then inHist ioInf ++ add ++ take (lack - length add) [256, 256..]
         else inHist ioInf ++ add
+    onlyV ioInf $
+        hPutStrLn stderr $ "  pollInput: eof =" ++ show eof'
+                        ++ ", got len=" ++ show (length add)
+                        ++ ", ix=" ++ show ix
     return $ ioInf { inEof = eof', inHist = newHist }
 
 -- | pollInput の補助関数。指定byte数を取得する。
@@ -258,6 +263,7 @@ jotS = "11111000"
 -- 変換の対象は、IotaとJotスタイルの部分のみ
 toCcStyle :: LamExpr -> LamExpr
 toCcStyle (L _ lexp) = la $ toCcStyle lexp
+toCcStyle (Nm "iota") = la $ V 1 %: Nm "S" %: Nm "K"
 toCcStyle (App _ (Nm "iota") (Nm "iota")) = Nm "I"
 toCcStyle (App _ (Nm "iota")
             (App _ (Nm "iota")
@@ -272,8 +278,16 @@ toCcStyle expr = expr
 
 jotToCcStyle :: String -> LamExpr
 jotToCcStyle jot = case parse jexprs "jotToCcStyle" $ jotToCcStr jot of
-    Left _ -> Jot (length jot) jot
+    Left _ -> foldl jotToCc (Nm "I") jot
     Right e -> e
+
+-- | Jotスタイルの式をCCの予約関数とラムダ抽象に変換
+--
+-- jotToCcStr で Left の場合、ラムダ抽象混じりで変換する。
+jotToCc :: LamExpr -> Char -> LamExpr
+jotToCc e '0' = e %: Nm "S" %: Nm "K"
+jotToCc e '1' = la . la $ e %: V 2 %: V 1
+jotToCc e _   = error $ "Internal Error: Invalid Jot: " ++ show e
 
 jexprs, jexpr :: Parsec String u LamExpr
 
@@ -282,6 +296,9 @@ jexprs = foldl1 (%:) <$> many1 jexpr
 jexpr = Nm . (:[]) <$> oneOf "SKI"
     <|> char '1' *> return (%:) <*> jexpr <*> jexpr
 
+-- | Jotスタイルの文字列をCCスタイルの文字列に変換を試行。
+--
+-- 変換できればRight値、出来なければLeft値を返す。
 jotToCcStr :: String -> String
 jotToCcStr jot = case jot of
     '1':('1':('1':('1':('1':('1':('1':('1':('1':

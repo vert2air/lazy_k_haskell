@@ -9,7 +9,7 @@ import System.Environment (getArgs, lookupEnv)
 
 import LamCalcCore (Stringifying(..), NameManager(..), PolicyKind(..)
                     , RedResult(..), readLazyK, toNamedString, abstElim
-                    , reductInf, red_1, toLambda)
+                    , reductInf, red_1, toLambda, buildInputLc)
 import LazyKParts (toCcStyle, toIotaStyle, toJotStyle)
 
 data Flag = ArgExpr String
@@ -100,7 +100,7 @@ main = do
             ArgToLambda -> toLambda acc
             ArgReduction -> reductInf acc
             ArgAbstElim -> maybe acc id $ abstElim acc
-            ArgReduct1   -> case red_1 def def acc of
+            ArgReduct1   -> case red_1 buildInputLc def def acc of
                                 RedStop _ _ s -> s
                                 RedProg _ _ p -> p
             ArgStyleCC   -> toCcStyle acc

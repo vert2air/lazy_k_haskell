@@ -6,7 +6,8 @@ import LamCalcCore (LamExpr(..), (%:), la, abstElim, toNamedString, comple
 import LamCalcParts (if_then_else
             , ch_0, ch_1, ch_256, is_zero, cn_plus, cn_mult, is_eq
             , lc_nil, cons, car, cdr, is_eq_LF, is_eq_r2
-            , y_comb, shortChNum, readStr)
+            , y_comb, readStr)
+import ShortChurchNum (shortChNum)
 
 {- |
   Description : Lazy K ファイルの作成のサンプルコード
