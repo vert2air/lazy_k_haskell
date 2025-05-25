@@ -3,7 +3,8 @@ module HUnitTests where
 import Test.HUnit
 
 import LamCalcCore (reductInf, toLambda, readLazyK)
-import LamCalcParts (shortChNum, getChNum)
+import LamCalcParts (getChNum)
+import ShortChurchNum (shortChNum)
 
 hUnitAll :: IO Counts
 hUnitAll = do

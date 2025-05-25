@@ -10,6 +10,7 @@ module LamCalcCore where
 
 import           Data.Default (Default(..))
 import           Data.Char (isDigit, isSpace, toUpper, toLower)
+import           Data.Either (fromRight)
 import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
@@ -19,6 +20,7 @@ import Test.QuickCheck (Arbitrary(..), Gen, oneof, listOf1, shuffle,
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
 
+import ShortChurchNum (shortChNum)
 
 -- | ラムダ式
 data LamExpr = V !Int           -- ^ De Bruijn index表現の変数。
@@ -590,11 +592,12 @@ untilStop f ioInf d e = case f ioInf d e of
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
  -}
-reduct :: IoInfo
+reduct :: (IoInfo -> Int -> LamExpr)
+        -> IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
-reduct ioInf d e = case once of
+reduct bi ioInf d e = case once of
     -- 停止したのなら、続けても無駄。
     RedStop _  _  _                -> once
     -- 既に入力promiseに当たったのなら、続けても無駄。
@@ -607,31 +610,31 @@ reduct ioInf d e = case once of
         -- In がリストに変わるので、RedProg を返す。
         -- 先頭のInは解消されているので、indexは-1にしておく。
         | ioInf.inEof || ix < length ioInf.inHist ->
-            RedProg d' (-1) $ buildInput ioInf ix
+            RedProg d' (-1) $ bi ioInf ix
         -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
         | otherwise                          -> once
     RedProg d' ix   (App _ (In _) oprd)
         -- 現時点で展開可能な入力があるので、それを使って続行。
         | ioInf.inEof || ix < length ioInf.inHist ->
-            forceProg $ reduct ioInf d' $ buildInput ioInf ix %: oprd
+            forceProg $ reduct bi ioInf d' $ bi ioInf ix %: oprd
         -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
         | otherwise                          -> once
 
-    RedProg d' _ e'@(App _ (Nm "+1")  _)                 -> reduct ioInf d' e'
-    RedProg d' _ e'@(App _ (Nm "I") _)                   -> reduct ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "+1")  _)                 -> reduct bi ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "I") _)                   -> reduct bi ioInf d' e'
     -- 戻ったら簡約出来る可能性あり。戻る。
     RedProg _  _    (App _ (Nm _) _)                     -> once
-    RedProg d' _ e'@(App _ (App _ (Nm "K") _x) _y)       -> reduct ioInf d' e'
-    RedProg d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y) -> reduct ioInf d' e'
+    RedProg d' _ e'@(App _ (App _ (Nm "K") _x) _y)       -> reduct bi ioInf d' e'
+    RedProg d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y) -> reduct bi ioInf d' e'
     -- 戻ったら簡約出来る可能性あり。戻る。
     RedProg _  _    (App _ (App _ (Nm _) _x) _y)         -> once
     RedProg d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
-                                                         -> reduct ioInf d' e'
+                                                         -> reduct bi ioInf d' e'
     -- β簡約が見えている。
-    RedProg d' _  e'@(App _ (L _ _) _)                   -> reduct ioInf d' e'
+    RedProg d' _  e'@(App _ (L _ _) _)                   -> reduct bi ioInf d' e'
     RedProg _  _    _                                    -> once
   where
-    once = red_1 ioInf d e
+    once = red_1 bi ioInf d e
 
 {- | Beta/Eta簡約の実行 (入力の遅延評価対応)
 
@@ -640,7 +643,8 @@ reduct ioInf d e = case once of
  返り値に何byte目の入力が必要かの情報を含める。
  ProgDot は更新するが、mature になっても処理は継続する。
  -}
-red_1 :: IoInfo
+red_1 :: (IoInfo -> Int -> LamExpr)
+        -> IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
@@ -649,70 +653,89 @@ red_1 :: IoInfo
 -- red_1  ioInf d e | isPdMature 1 ioInf d = RedStop d (-1) e
 
 -- 入力promiseの当たりをチェック
-red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
+red_1 bi ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
-    | eof || ix < length input = RedProg d (length input) $ buildInput ioInf ix
+    | eof || ix < length input = RedProg d (length input) $ bi ioInf ix
     -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
     | otherwise = RedStop d ix e
-red_1 ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
+red_1 bi ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
-        forceProg $ red_1 ioInf d $ App s (buildInput ioInf ix) oprd
+        forceProg $ red_1 bi ioInf d $ App s (bi ioInf ix) oprd
     -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
     | otherwise = RedStop d ix e
 
 -- CC式の簡約
-red_1 _io d (App _ (Nm "+1") (Num n))            = RedProg d (-1) . Num $ n + 1
-red_1 _io d (App _ (Nm "I") x)                   = RedProg d (-1) x
-red_1 _io d (App _ (App _ (Nm "K") x) _y)        = RedProg d (-1) x
-red_1 _io d (App _ (App _ (Nm "S") (Nm "K")) _y) = RedProg d (-1) $ Nm "I"
-red_1 _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z) = RedProg d (-1) z
+red_1 _b _io d (App _ (Nm "+1") (Num n))            = RedProg d (-1) . Num $ n + 1
+red_1 _b _io d (App _ (Nm "I") x)                   = RedProg d (-1) x
+red_1 _b _io d (App _ (App _ (Nm "K") x) _y)        = RedProg d (-1) x
+red_1 _b _io d (App _ (App _ (Nm "S") (Nm "K")) _y) = RedProg d (-1) $ Nm "I"
+red_1 _b _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z) = RedProg d (-1) z
 -- CCの簡約でより複雑になるのは、このパターンだけ。ここだけ incPd する。
-red_1 _io d (App _ (App _ (App _ (Nm "S") x) y) z)
+red_1 _b _io d (App _ (App _ (App _ (Nm "S") x) y) z)
                                 = incPd 1 . RedProg d (-1) $ x %: z %: (y %: z)
 
 -- eta簡約
-red_1 _ioInf d (L _ (App _ fun (V 1)))
+red_1 _b _ioInf d (L _ (App _ fun (V 1)))
     | not (hasVar 1 fun) =
         RedProg d (-1) $ comple (shallow 1) fun
 
 -- 以降は、beta簡約
-red_1 ioInf d              (L _ le)    = la <$> red_1 ioInf d le
-red_1 _ioInf d             (App _ (L _ le) e) =
+red_1 bi ioInf d              (L _ le)    = la <$> red_1 bi ioInf d le
+red_1 _b _ioInf d             (App _ (L _ le) e) =
     incPd 1 . RedProg d (-1) $ comple (subst 1 e) le
 
-red_1 ioInf            d e@(App _ x y) = case red_1 ioInf d x of
+red_1 bi ioInf            d e@(App _ x y) = case red_1 bi ioInf d x of
     RedStop d' i _
         | isPdMature 1 ioInf d' -> RedStop d' i e
         | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
         -- | otherwise  -> RedStop def i (x %:) <*> red_1 ioInf d' y
         -- ↑遅い。↓速い。かなり違いがある。
-        | otherwise  -> (x %:) <$> red_1 ioInf d' y
+        | otherwise  -> (x %:) <$> red_1 bi ioInf d' y
     -- x'                ->  (%:) <$> x' <*> pure y
     -- ↑だと重いのかも。↓で試す。
     x'                ->  (%: y) <$> x'
 -- red_1 _ d e            = incPds d $ pure e     -- V and Nm
 -- ↑だと重いのかも。↓で試す。
-red_1 _ d e            = RedStop d (-1) e -- incPds d $ pure e     -- V and Nm
+red_1 _b _ d e            = RedStop d (-1) e -- incPds d $ pure e     -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
-buildInput :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
+buildInputLc :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
             -> Int      -- ^ beta簡約に必要なinputのインデックス
             -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
-buildInput (IoInfo eof input _ _ _ _) ix
+buildInputLc (IoInfo eof input _ _ _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
-    | otherwise = error "buildInput: called under unexpected condition"
+    | otherwise = error "buildInputLc: called under unexpected condition"
   where
     makeCons carNum cdr = la $ V 1 %: makeChuchNum carNum %: cdr
     compInput
         | eof = input ++ take (ix - length input + 1) [256, 256 ..]
         | otherwise = input
 
+buildInputCc :: IoInfo  -- ^ 標準入力の履歴と進捗Dotの表示頻度
+            -> Int      -- ^ beta簡約に必要なinputのインデックス
+            -> LamExpr  -- ^ 判明しているinputを展開したラムダ式
+buildInputCc (IoInfo eof input _ _ _ _) ix
+    | ix < length input = foldr makeCons (In (length input)) $ drop ix input
+    | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
+    | otherwise = error "buildInput: called under unexpected condition"
+  where
+    makeCons a d = Nm "S"
+            %: (Nm "S" %: Nm "I" %: (Nm "K" %: ccNum a))
+            %: (Nm "K" %: d)
+    ccNum num = fromRight (error "ccNum in buildInputCC")
+                $ readLazyK "buildInputCc" (shortChNum !! num)
+    compInput
+        | eof = input ++ take (ix - length input + 1) [256, 256 ..]
+        | otherwise = input
+
 -- | 変化しなくなるまで、beta/eta簡約を繰り返す。
+--
+-- 入力promiseは使わないので、buildInputは指定するが、使わない。
 reductInf :: LamExpr -> LamExpr
-reductInf = takeExpr . untilStop reduct def def
+reductInf = takeExpr . untilStop (reduct buildInputLc) def def
 
 -- | Church encodingで、ix を表現するラムダ式を生成
 makeChuchNum :: Int -> LamExpr

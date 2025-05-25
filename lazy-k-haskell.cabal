@@ -21,7 +21,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  LamCalcCore, LamCalcParts, LazyKParts
+    exposed-modules:  LamCalcCore, ShortChurchNum, LamCalcParts, LazyKParts
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.21.0.0

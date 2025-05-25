@@ -15,10 +15,10 @@ import Text.Parsec ((<|>), Parsec, char, many1, oneOf, parse)
 
 import LamCalcCore (LamExpr(..), RedResult(..), IoInfo(..), ProgDot(..)
                 , (%:), la, reduct, forceProg, isPdMature, incPd, clearPd
-                , toNamedString, takeStringified
+                , toNamedString, takeStringified, buildInputLc, buildInputCc
                 , NameManager(..), PolicyKind(..)
                 )
-import LamCalcParts (getChNum, red_ccN)
+import LamCalcParts (getChNum)
 
 -- | 純粋なラムダ式と、コンビネータ表現、それぞれの deconsLoop のsetup
 deconsLoopLc, deconsLoopCc ::
@@ -86,7 +86,7 @@ deconsLc ioInf d expr =
   case expr of
     L _ (App _ (App _ (V 1) car) cdr) -> return (car, cdr, d, ioInf)
     _ -> do
-        reded <- careIoInfo reduct ioInf d expr
+        reded <- careIoInfo (reduct buildInputLc) ioInf d expr
         case reded of
             (RedProg d' _ expr', ioInf') -> deconsLc ioInf' d' expr'
             ret@(RedStop d' ix expr', ioInf')
@@ -105,7 +105,7 @@ toIntLc :: IoInfo
         -> LamExpr
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntLc ioInf pd expr = do
-    (car_lam, pd', ioInf') <- untilStopInput reduct ioInf pd expr
+    (car_lam, pd', ioInf') <- untilStopInput (reduct buildInputLc) ioInf pd expr
     return (getChNum car_lam, pd', ioInf')
 
 -- | deconsLc のコンビネータ版。
@@ -126,7 +126,7 @@ toIntCc :: IoInfo
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntCc ioInf pd expr = do
     -- (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $ expr %: Nm "+1" %: V 0
-    (car_cc, pd', ioInf') <- untilStopInput reduct ioInf pd $ expr %: Nm "+1" %: Num 0
+    (car_cc, pd', ioInf') <- untilStopInput (reduct buildInputCc) ioInf pd $ expr %: Nm "+1" %: Num 0
     case car_cc of
         Num n -> return (Right n, pd', ioInf')
         V n -> return (Right n, pd', ioInf')
