@@ -63,10 +63,10 @@ reductInputLimit :: Bool    -- ^ buildInput で、Lc を使うか。(Falseは Cc
                 -> Int      -- ^ beta簡約の上限回数
                 -> LamExpr  -- ^ beta/eta簡約を行うラムダ式
                 -> Maybe LamExpr  -- ^ beta/eta簡約の結果。
-                            -- 以下のいずれかの場合、Nothing を返す。
-                            -- - beta簡約の上限回数に達しても 簡約の余地がある。
-                            -- - 入力promiseに当たりbete簡約が進まなくなった。
-reductInputLimit isLc ioInf n e = reductLimitAux isLc limitInf def . toLambda $ e
+                        -- 以下のいずれかの場合、Nothing を返す。
+                        -- - beta簡約の上限回数に達しても 簡約の余地がある。
+                        -- - 入力promiseに当たりbete簡約が進まなくなった。
+reductInputLimit isLc ioInf n e = reductLimitAux isLc limitInf def $ toLambda e
   where
     limitInf = ioInf {progDot = ProgDot [0, n]}
 
@@ -76,7 +76,7 @@ reductLimitAux isLc limit pdot e = case reduct buildInput limit pdot e of
     RedProg pdot' inIx e'
         | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
         | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。
-        | otherwise -> reductLimitAux isLc limit pdot' e' -- 前進した。簡約化継続。
+        | otherwise -> reductLimitAux isLc limit pdot' e' -- 前進した。継続。
     RedStop _pdot' inIx e'
         | isPdMature 1 limit pdot -> Nothing -- 収束が見えない。スルー。
         | inIx >= 0 -> Nothing -- 入力promiseに当たった。スルー。

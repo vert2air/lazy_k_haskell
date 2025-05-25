@@ -42,14 +42,14 @@ deconsLoopCc = deconsLoop deconsCc toIntCc
 この関数は感知しない。
 -}
 deconsLoop :: (IoInfo -> ProgDot -> e -> IO (e, e, ProgDot, IoInfo))
-                            -- ^ 式を car/cdr に分割する関数
-            -> (IoInfo -> ProgDot -> e -> IO (Either String Int, ProgDot, IoInfo))
-                            -- ^ 式(car)を数値に変換する関数
-            -> IoInfo       -- ^ 入力情報と出力関係のオプション
-            -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
-            -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
-            -> e            -- ^ 出力すべき Scott encoding のリスト
-            -> IO ExitCode  -- ^ プログラムの終了コード
+                        -- ^ 式を car/cdr に分割する関数
+        -> (IoInfo -> ProgDot -> e -> IO (Either String Int, ProgDot, IoInfo))
+                        -- ^ 式(car)を数値に変換する関数
+        -> IoInfo       -- ^ 入力情報と出力関係のオプション
+        -> ProgDot      -- ^ 進捗dot用。beta簡約を実行した回数。
+        -> Maybe Int    -- ^ 出力するbyte数を指定。Nothingなら無限。
+        -> e            -- ^ 出力すべき Scott encoding のリスト
+        -> IO ExitCode  -- ^ プログラムの終了コード
 deconsLoop _      _     _     _  (Just 0)  _    = return ExitSuccess
 deconsLoop decons toInt ioInf pd countdown expr = do
     (car, cdr, pd', ioInf') <- decons ioInf pd expr
@@ -105,8 +105,8 @@ toIntLc :: IoInfo
         -> LamExpr
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntLc ioInf pd expr = do
-    (car_lam, pd', ioInf') <- untilStopInput (reduct buildInputLc) ioInf pd expr
-    return (getChNum car_lam, pd', ioInf')
+    (car, pd', ioInf') <- untilStopInput (reduct buildInputLc) ioInf pd expr
+    return (getChNum car, pd', ioInf')
 
 -- | deconsLc のコンビネータ版。
 -- expr を Scott encoding のリストとして扱い、car/cdrに分割 (遅延入力対応)
@@ -125,8 +125,8 @@ toIntCc :: IoInfo
         -> LamExpr
         -> IO (Either String Int, ProgDot, IoInfo)
 toIntCc ioInf pd expr = do
-    -- (car_cc, pd', ioInf') <- untilStopInput red_ccN ioInf pd $ expr %: Nm "+1" %: V 0
-    (car_cc, pd', ioInf') <- untilStopInput (reduct buildInputCc) ioInf pd $ expr %: Nm "+1" %: Num 0
+    (car_cc, pd', ioInf') <- untilStopInput (reduct buildInputCc) ioInf pd
+                                                $ expr %: Nm "+1" %: Num 0
     case car_cc of
         Num n -> return (Right n, pd', ioInf')
         V n -> return (Right n, pd', ioInf')

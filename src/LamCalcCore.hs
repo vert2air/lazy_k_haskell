@@ -100,11 +100,12 @@ instance Arbitrary PolicyKind where
 data NameManager = NameManager
     { nmPolicy :: PolicyKind -- ^ Policy for name management
     , nmPool  :: String  -- ^ 払い出す名前のプール。
-                         -- PK_index の場合、参照しない。
-                         -- PK_single_use の場合、払い出す度に一文字ずつ短くなる。
-    , nmStack  :: String -- ^ 命名した変数のスタック。文字列の1個ずつが払い出した名前。
+                         -- PK_index では、参照しない。
+                         -- PK_single_use では、払出す度に一文字ずつ短くなる。
+    , nmStack  :: String -- ^ 命名した変数のスタック。
+                         -- 文字列の1個ずつが払い出した名前。
                          -- 先頭が de Bruij Index = 1 に対応。
-                         -- 空白は、名前を与えず、de Bruijn index で表示することを示す。
+                         -- 空白なら、名前でなく、de Bruijn index で表示する。
     , nmUnlamStyle :: Bool -- ^ 真なら、S, K, I を Unlambdaスタイルで表示する。
     , nmLamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
     } deriving (Show)
@@ -241,8 +242,9 @@ digLamAbst :: NameManager
                          -- λ xyz.XXX なら、"xyz"。indexの逆順。
 digLamAbst mng e@(L _ lexp@(L _ _)) = case (newName, ret) of
     (' ':_, _    ) -> Stringifying (' ':nmLamSign mng:ret) SK_General mng_ret
-    (n:_  , ' ':_) -> Stringifying (n:'.':' ':nmLamSign mng:ret) SK_General mng_ret
-    (n:_  , _    ) -> Stringifying (n:ret) SK_General mng_ret
+    (n:_  , ' ':_) -> Stringifying (n:'.':' ':nmLamSign mng:ret)
+                                                            SK_General mng_ret
+    (n:_  , _    ) -> Stringifying (n:ret)                  SK_General mng_ret
     ("", _    ) -> error $ "Internal Error : enterLambda cannot assign name"
   where
     (newName, mng_ent) = enterLambda mng e
@@ -383,6 +385,10 @@ bindIdx names expr = applyN (length names) la $ bindAux bindTab 0 expr
     insertAux tab (nm, ridx) = M.insert nm (length names - ridx) tab
     bindTab = foldl insertAux M.empty $ zip names [0..]
 
+-- | 関数を繰り返し適用
+--
+-- >>> show $ applyN 3 (Nm "f" %:) (Nm "x")
+-- "f(f(fx))"
 applyN :: Int -> (a -> a) -> a -> a
 applyN 0 _ x = x
 applyN n f x = applyN (n - 1) f (f x)
@@ -486,16 +492,7 @@ instance Applicative RedResult where
     RedStop dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
     RedProg dF i f <*> RedStop dE j e = RedProg (dF + dE) (max i j) (f e)
     RedProg dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
-{-
--- 使ってないので、コメントアウト。
-instance Monad RedResult where
-    RedStop dE i e >>= f = case f e of
-        RedStop dF j e' -> RedStop (dE + dF) (max i j) e'
-        RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
-    RedProg dE i e >>= f = case f e of
-        RedStop dF j e' -> RedProg (dE + dF) (max i j) e'
-        RedProg dF j e' -> RedProg (dE + dF) (max i j) e'
--}
+
 -- | RedResult の中の式を取り出す。
 takeExpr :: RedResult e -> e
 takeExpr (RedStop _ _ e) = e
@@ -591,8 +588,9 @@ untilStop f ioInf d e = case f ioInf d e of
  入力が遅延評価される前提で、可能な範囲でbeta簡約およびeta簡約を行う。
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
+ 複雑さが増す可能性のある簡約実行時には ProgDot を更新する。
  -}
-reduct :: (IoInfo -> Int -> LamExpr)
+reduct :: (IoInfo -> Int -> LamExpr) -- ^ Inputプロミスを置換える実リスト生成
         -> IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
@@ -620,19 +618,20 @@ reduct bi ioInf d e = case once of
         -- Inputプロミスは外部情報が必要なので、一旦 reduct を止める。
         | otherwise                          -> once
 
-    RedProg d' _ e'@(App _ (Nm "+1")  _)                 -> reduct bi ioInf d' e'
-    RedProg d' _ e'@(App _ (Nm "I") _)                   -> reduct bi ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "+1")  _)            -> reduct bi ioInf d' e'
+    RedProg d' _ e'@(App _ (Nm "I") _)              -> reduct bi ioInf d' e'
     -- 戻ったら簡約出来る可能性あり。戻る。
-    RedProg _  _    (App _ (Nm _) _)                     -> once
-    RedProg d' _ e'@(App _ (App _ (Nm "K") _x) _y)       -> reduct bi ioInf d' e'
-    RedProg d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y) -> reduct bi ioInf d' e'
+    RedProg _  _    (App _ (Nm _) _)                -> once
+    RedProg d' _ e'@(App _ (App _ (Nm "K") _x) _y)  -> reduct bi ioInf d' e'
+    RedProg d' _ e'@(App _ (App _ (Nm "S") (Nm "K")) _y)
+                                                    -> reduct bi ioInf d' e'
     -- 戻ったら簡約出来る可能性あり。戻る。
-    RedProg _  _    (App _ (App _ (Nm _) _x) _y)         -> once
+    RedProg _  _    (App _ (App _ (Nm _) _x) _y)    -> once
     RedProg d' _ e'@(App _ (App _ (App _ (Nm "S") _x) _y) _z)
-                                                         -> reduct bi ioInf d' e'
+                                                    -> reduct bi ioInf d' e'
     -- β簡約が見えている。
-    RedProg d' _  e'@(App _ (L _ _) _)                   -> reduct bi ioInf d' e'
-    RedProg _  _    _                                    -> once
+    RedProg d' _  e'@(App _ (L _ _) _)              -> reduct bi ioInf d' e'
+    RedProg _  _    _                               -> once
   where
     once = red_1 bi ioInf d e
 
@@ -641,37 +640,34 @@ reduct bi ioInf d e = case once of
  入力が遅延評価される前提で、可能な範囲でbeta簡約又はeta簡約を1回だけ行う。
  入力プロミスを評価する必要が出た時点で、評価を停止し、
  返り値に何byte目の入力が必要かの情報を含める。
- ProgDot は更新するが、mature になっても処理は継続する。
+ 複雑さが増す可能性のある簡約実行時には ProgDot を更新する。
  -}
-red_1 :: (IoInfo -> Int -> LamExpr)
+red_1 :: (IoInfo -> Int -> LamExpr) -- ^ Inputプロミスを置換える実リスト生成
         -> IoInfo
         -> ProgDot  -- ^ beta簡約を実行した回数。
         -> LamExpr
         -> RedResult LamExpr
--- 進捗Dotのチェック
--- これ不要。
--- red_1  ioInf d e | isPdMature 1 ioInf d = RedStop d (-1) e
-
 -- 入力promiseの当たりをチェック
 red_1 bi ioInf@(IoInfo eof input _ _ _ _) d e@(In ix)
     -- 現時点で展開可能な入力がある。cons なので、beta簡約は出来ない。
     -- In がリストに変わるので、RedProg を返す。
     | eof || ix < length input = RedProg d (length input) $ bi ioInf ix
-    -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
+    -- Inputプロミスは外部情報が必要なので、このままreturn。
     | otherwise = RedStop d ix e
 red_1 bi ioInf@(IoInfo eof input _ _ _ _) d e@(App s (In ix) oprd)
     -- 現時点で展開可能な入力があるので、それを使って続行。
     | eof || ix < length input =
         forceProg $ red_1 bi ioInf d $ App s (bi ioInf ix) oprd
-    -- Inputプロミスは外部情報が必要なので、一旦 red_1 を止める。
+    -- Inputプロミスは外部情報が必要なので、このままreturn。
     | otherwise = RedStop d ix e
 
 -- CC式の簡約
-red_1 _b _io d (App _ (Nm "+1") (Num n))            = RedProg d (-1) . Num $ n + 1
-red_1 _b _io d (App _ (Nm "I") x)                   = RedProg d (-1) x
-red_1 _b _io d (App _ (App _ (Nm "K") x) _y)        = RedProg d (-1) x
+red_1 _b _io d (App _ (Nm "+1") (Num n))         = RedProg d (-1) . Num $ n + 1
+red_1 _b _io d (App _ (Nm "I") x)                 = RedProg d (-1) x
+red_1 _b _io d (App _ (App _ (Nm "K") x) _y)       = RedProg d (-1) x
 red_1 _b _io d (App _ (App _ (Nm "S") (Nm "K")) _y) = RedProg d (-1) $ Nm "I"
-red_1 _b _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z) = RedProg d (-1) z
+red_1 _b _io d (App _ (App _ (App _ (Nm "S") (Nm "K")) _y) z)
+                                                    = RedProg d (-1) z
 -- CCの簡約でより複雑になるのは、このパターンだけ。ここだけ incPd する。
 red_1 _b _io d (App _ (App _ (App _ (Nm "S") x) y) z)
                                 = incPd 1 . RedProg d (-1) $ x %: z %: (y %: z)
@@ -690,15 +686,9 @@ red_1 bi ioInf            d e@(App _ x y) = case red_1 bi ioInf d x of
     RedStop d' i _
         | isPdMature 1 ioInf d' -> RedStop d' i e
         | i >= 0     -> RedStop d' i e  -- Inputプロミスでblockした。
-        -- | otherwise  -> RedStop def i (x %:) <*> red_1 ioInf d' y
-        -- ↑遅い。↓速い。かなり違いがある。
         | otherwise  -> (x %:) <$> red_1 bi ioInf d' y
-    -- x'                ->  (%:) <$> x' <*> pure y
-    -- ↑だと重いのかも。↓で試す。
     x'                ->  (%: y) <$> x'
--- red_1 _ d e            = incPds d $ pure e     -- V and Nm
--- ↑だと重いのかも。↓で試す。
-red_1 _b _ d e            = RedStop d (-1) e -- incPds d $ pure e     -- V and Nm
+red_1 _b _ d e            = RedStop d (-1) e -- V and Nm
 
 -- | Inputプロミスを置換える実リストを生成
 buildInputLc :: IoInfo    -- ^ 標準入力の履歴と進捗Dotの表示頻度
@@ -720,7 +710,7 @@ buildInputCc :: IoInfo  -- ^ 標準入力の履歴と進捗Dotの表示頻度
 buildInputCc (IoInfo eof input _ _ _ _) ix
     | ix < length input = foldr makeCons (In (length input)) $ drop ix input
     | eof = foldr makeCons (In (length compInput)) $ drop ix compInput
-    | otherwise = error "buildInput: called under unexpected condition"
+    | otherwise = error "buildInputCc: called under unexpected condition"
   where
     makeCons a d = Nm "S"
             %: (Nm "S" %: Nm "I" %: (Nm "K" %: ccNum a))
@@ -847,135 +837,3 @@ mergeApp f x y = case (f x, f y) of
     (Just x', Nothing) -> Just $ x' %: y
     (Nothing, Just y') -> Just $ x  %: y'
     _                  -> Nothing
-
-
-{- 以降は使っていないが、後で速度比較をするために残しておく。
-
-{-
- - Lazy-K Interpreter
- -}
-execLazyK :: LamExpr -> [Int]
-execLazyK cc
-    | isNil cc  = []
-    | otherwise = case getNum $ car %: cc of
-                    Just n
-                        | n < 256 -> n : execLazyK (cdr %: cc)
-                    _             -> []
-  where
-    car = Nm "S" %: Nm "I" %: (Nm "K" %: Nm "K") -- \ e -> e (\ a b -> a)
-    cdr = Nm "S" %: Nm "I" %: (Nm "K" %: (Nm "K" %: Nm "I"))
-                                                --  \ e -> e (\ a b -> a)
-
--- |
--- Check whether the list is nil or not directly
-isNil :: LamExpr -> Bool
--- isNil cc = case evalCC $ aux cc of
-isNil cc = case evalCC1 $ ChNumEval $ aux cc of
-            Just (ChNumEval (Nm "True")) -> True
-            _                            -> False
-  where
-    aux a = a %: (Nm "K" %: (Nm "K" %: (Nm "K" %: Nm "False"))) %: Nm "True"
-
-stepN :: (a -> Maybe a) -> Int -> a -> a
-stepN _ 0 e = e
-stepN f n e = case f e of
-                Nothing -> e
-                Just e' -> stepN f (n-1) e'
-
-applyFully ::
-    (a -> Maybe a)          -- ^ translation function
-    -> (a -> Maybe String)  -- ^ function to check if it should be cont. or not
-    -> Int                  -- ^ time limit to apply the translation function
-    -> a                    -- ^ target value
-    -> Either (a, Int, String) (a, Int)
-applyFully _ _   0   a = Left (a, 0, "Time Limit")
-applyFully f chk lmt a = case f a of
-    Nothing -> Right (a, lmt)
-    Just a' -> case chk a of
-                Nothing  -> applyFully f chk (lmt - 1) a'
-                Just msg -> Left (a', lmt, msg)
-
-checkStyle :: LamExpr -> Maybe String
-checkStyle (Nm "I")    = Just "CC"
-checkStyle (Nm "K")    = Just "CC"
-checkStyle (Nm "S")    = Just "CC"
-checkStyle (Nm "iota") = Just "Iota"
-checkStyle (Jot _ _)   = Just "Jot"
-checkStyle (App _ x y) = do
-    tx <- checkStyle x
-    ty <- checkStyle y
-    if tx == ty && tx /= "Jot"
-        then Just tx
-        else Nothing
-checkStyle _ = Nothing
-
--- |
--- Get the value of Church Number directly
--- In this function, Nm "plus1" and V n are used in illegal way
--- because I don't want to make definition of LamExpr complicated.
-getNum :: LamExpr -> Maybe Int
-getNum cc = case stepN evalCC1 5000 $ toChNumEval cc of
-                ChNumEval (V n) -> Just n
-                _               -> Nothing
-
-getNumN :: Int -> LamExpr -> Either String (Int, Int)
-getNumN lmt cc = case applyFully evalCC1 chk lmt $ toChNumEval cc of
-    Right (ChNumEval (V n), c) -> Right (n, c)
-    Right _                    -> Left ""
-    Left (ChNumEval e, c, msg) ->
-            Left $ printf "%s : c = %d / %d : size = %d" msg c lmt (lamSize e)
-  where
-    chk (ChNumEval a)
-        | lamSize a > 10*1000*1000 = Just "Space Limit"
-        | otherwise                = Nothing
-
--- sl = 10 * 1000 * 1000
-
-newtype ChNumEval = ChNumEval { getLamExpr :: LamExpr } deriving (Eq)
-
-toChNumEval :: LamExpr -> ChNumEval
-toChNumEval cc = ChNumEval $ cc %: Nm "plus1" %: V 0
-
-evalCC :: Bool -> ChNumEval -> Maybe ChNumEval
-evalCC _ (ChNumEval (App _ (Nm "I") x)) = Just $ comple evalCC2 $ ChNumEval x
-evalCC _ (ChNumEval (App _ (App _ (Nm "K") x) _)) =
-                                        Just $ comple evalCC2 $ ChNumEval x
--- evalCC _ (Nm "S" :% Nm "K" :% _ :% x) = Just $ comple evalCC2 $ ChNumEval x
--- evalCC _ (Nm "S" :% Nm "K" :% _)      = Just $ ChNumEval $ Nm "I"
-evalCC b (ChNumEval (App _ (App _ (App _ (Nm "S") x) y) z))
-    | b                       = Just $ ChNumEval $ x'' %: z'' %: (y'' %: z'')
-    | x' == Nothing && y' == Nothing && z' == Nothing
-                              = Nothing
-    | otherwise               = Just $ ChNumEval $ Nm "S" %: x'' %: y'' %: z''
-  where
-    x' = evalCC2 $ ChNumEval x
-    y' = evalCC2 $ ChNumEval y
-    z' = evalCC2 $ ChNumEval z
-    x'' = maybe x getLamExpr x'
-    y'' = maybe y getLamExpr y'
-    z'' = maybe z getLamExpr z'
-evalCC _ (ChNumEval (App _ (Nm "plus1") (V n))) = Just $ ChNumEval $ V (n + 1)
-evalCC b (ChNumEval (App _ (Nm "plus1") x))   =
-        ChNumEval . (Nm "plus1" %:) . getLamExpr <$> evalCC b (ChNumEval x)
--- evalCC _ (Nm "iota"  :% x)       = Just $ comple evalCC2 x %: Nm "S" %: Nm "K"
-evalCC True  (ChNumEval (App _ x y)) =
-    case evalCC1 $ ChNumEval x of
-        Just (ChNumEval a) -> Just $ ChNumEval $ a %: y
-        _                  ->
-            case evalCC1 $ ChNumEval y of
-                Just (ChNumEval b) -> Just $ ChNumEval $ x %: b
-                _                  -> Nothing
-
-evalCC False (ChNumEval (App _ x y))
-    | x' == Nothing && y' == Nothing = Nothing
-    | otherwise                      =
-        Just $ ChNumEval $ maybe x getLamExpr x' %: maybe y getLamExpr y'
-  where
-    x' = evalCC2 $ ChNumEval x
-    y' = evalCC2 $ ChNumEval y
-evalCC _    _        = Nothing
-
-evalCC1, evalCC2 :: ChNumEval -> Maybe ChNumEval
-evalCC1 = evalCC True
-evalCC2 = evalCC False
--}
