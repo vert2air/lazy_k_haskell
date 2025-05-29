@@ -26,12 +26,15 @@ rank_sum = map mk_rank_sum [0..]
 rank_cum :: [Integer]
 rank_cum = (0:) $ zipWith (+) rank_cum $ drop 1 rank_sum
 
+gn_struct :: [(Integer, (Int, Int))]
+gn_struct = zip gn_struct_bound gn_struct_pair
+
 {- | gn_struct_bound と対応して、変数の個数の組合せ
 
 0番目は、変数が 1 個で、まだ関数適用がないので、取り合えず (1, 0) としておく。
 -}
-gn_struct :: [(Int, Int)]
-gn_struct = ((1, 0):) . concat $
+gn_struct_pair :: [(Int, Int)]
+gn_struct_pair = ((1, 0):) . concat $
         map (\r -> map (\n -> (n, r - n)) [1..r - 1]) [1..]
 
 {- | 最上位の関数適用の関数と引数に含まれる変数の個数の組み合わせが変わる境界値
@@ -40,7 +43,7 @@ gn_struct = ((1, 0):) . concat $
 2番目の要素は、変数が 1 個の場合の組み合わせ数 3。
 -}
 gn_struct_bound :: [Integer]
-gn_struct_bound = (0:) . (3:) $ map (calc . (gn_struct !!)) [1..]
+gn_struct_bound = (0:) . (3:) $ map (calc . (gn_struct_pair !!)) [1..]
   where
     calc (f, a) = rank_cum !! (f + a - 1) + off f (f + a)
     off f r = let r_1 = drop 1 . take r $ rank_sum
@@ -61,16 +64,16 @@ cover_struct r = foldl (+) 0 [0..r]
 goedel_to_expr :: Integer -> LamExpr
 goedel_to_expr gn = g2e_aux (decomp_map gn) gn
 
-decomp_map :: Integer -> M.Map Integer Int
+decomp_map :: Integer -> M.Map Integer (Int, Int)
 decomp_map gn = binSearch o_struct
   where
     o_rank = cover_rank 1 gn
     o_struct = cover_struct o_rank
 
-binSearch :: Int -> M.Map Integer Int
-binSearch os = M.fromList $ zip gn_struct_bound [0..os]
+binSearch :: Int -> M.Map Integer (Int, Int)
+binSearch os = M.fromList $ take os gn_struct
 
-g2e_aux :: M.Map Integer Int -> Integer -> LamExpr
+g2e_aux :: M.Map Integer (Int, Int) -> Integer -> LamExpr
 g2e_aux _ 0 = Nm "I"
 g2e_aux _ 1 = Nm "K"
 g2e_aux _ 2 = Nm "S"
@@ -78,12 +81,12 @@ g2e_aux decomp gn = g2e_aux decomp f_gn %: g2e_aux decomp o_gn
   where
     (f_gn, o_gn) = decomp_gn decomp gn
 
-decomp_gn :: M.Map Integer Int -> Integer -> (Integer, Integer)
+decomp_gn :: M.Map Integer (Int, Int) -> Integer -> (Integer, Integer)
 decomp_gn decomp gn = (f_gn, o_gn)
   where
-    fo_idx = M.lookupLE gn decomp
-    (f_cnt, o_cnt) = gn_struct !! fo_idx
-    renum = gn - (gn_struct_bound !! fo_idx)
+    (top, (f_cnt, o_cnt)) = maybe (error "Inner Error: decomp_gn") id $
+                                    M.lookupLE gn decomp
+    renum = gn - top
     (f_ord, o_ord) = renum `divMod` (rank_sum !! o_cnt)
     f_gn = f_ord + rank_cum !! (f_cnt - 1)
     o_gn = o_ord + rank_cum !! (o_cnt - 1)
@@ -94,6 +97,6 @@ main = do
         putStrLn $ show (n, rank_sum !! n)
         putStrLn $ show (n, rank_cum !! n)
     forM_ [0..25] $ \n -> do
-        putStrLn $ show (n, gn_struct_bound !! n)
-    forM_ [0..25] $ \n -> do
         putStrLn $ show (n, gn_struct !! n)
+    forM_ [0..50] $ \n -> do
+        putStrLn $ show (n, goedel_to_expr n)
