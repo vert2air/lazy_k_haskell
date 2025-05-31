@@ -92,6 +92,21 @@ decomp_gn decomp gn = (f_gn, o_gn)
     f_gn = f_ord + rank_cum !! (f_cnt - 1)
     o_gn = o_ord + rank_cum !! (o_cnt - 1)
 
+expr_to_goedel :: LamExpr -> (Integer, Int)
+expr_to_goedel (Nm "I") = (0, 1)
+expr_to_goedel (Nm "K") = (1, 1)
+expr_to_goedel (Nm "S") = (2, 1)
+expr_to_goedel (App _ f o) = (f_ord_in_same_len * rank_sum !! o_cnt
+                            + o_ord_in_same_len + gn_struct_bound !! grp_idx
+                            , e_cnt)
+  where
+    (f_gn, f_cnt) = expr_to_goedel f
+    (o_gn, o_cnt) = expr_to_goedel o
+    f_ord_in_same_len = f_gn - rank_cum !! (f_cnt - 1)
+    o_ord_in_same_len = o_gn - rank_cum !! (o_cnt - 1)
+    e_cnt = f_cnt + o_cnt
+    grp_idx = (e_cnt - 1) * (e_cnt - 2) `div` 2 + f_cnt
+
 main :: IO ()
 main = do
     forM_ [0..10] $ \n -> do
