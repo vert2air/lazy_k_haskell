@@ -1,6 +1,5 @@
 module GoedelNum where
 
-import Control.Monad (forM_)
 import qualified Data.Map as M (Map, fromList, lookupLE)
 
 import LamCalcCore (LamExpr(..), (%:))
@@ -106,13 +105,4 @@ expr_to_goedel (App _ f o) = (f_ord_in_same_len * rank_sum !! o_cnt
     o_ord_in_same_len = o_gn - rank_cum !! (o_cnt - 1)
     e_cnt = f_cnt + o_cnt
     grp_idx = (e_cnt - 1) * (e_cnt - 2) `div` 2 + f_cnt
-
-main :: IO ()
-main = do
-    forM_ [0..10] $ \n -> do
-        putStrLn $ show (n, rank_sum !! n)
-        putStrLn $ show (n, rank_cum !! n)
-    forM_ [0..25] $ \n -> do
-        putStrLn $ show (n, gn_struct !! n)
-    forM_ [0..50] $ \n -> do
-        putStrLn $ show (n, goedel_to_expr n)
+expr_to_goedel _ = (-1, -1)

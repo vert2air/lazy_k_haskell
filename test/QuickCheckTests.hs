@@ -10,6 +10,7 @@ import LamCalcCore (LamExpr(..), NameManager(..), Stringifying(..), IoInfo(..)
                     , ProgDot(..), RedResult(..)
                     , reduct, buildInputLc, buildInputCc, isPdMature, toLambda
                     , abstElim, toNamedString, readLazyK, comple)
+import GoedelNum (goedel_to_expr, expr_to_goedel)
 
 -- | QuickCheck の実行時間上限。[マイクロ秒]
 -- 簡約により式が膨らみ続けるケースに備え、時間で打ち切る。
@@ -26,7 +27,8 @@ qc_main = do
     res_rw <- quickCheckWithResult args prop_toNamedString_readLazyK
     res_b <- quickCheckWithResult args $ within timeLimit $ prop_reduction
     res_a <- quickCheckWithResult args $ within timeLimit $ prop_abst_elim
-    return [res_rw, res_b, res_a]
+    res_goedel <- quickCheckWithResult args prop_goedel
+    return [res_rw, res_b, res_a, res_goedel]
 
 -- | toNamedString の結果が readLazyK で元に戻ること。
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Property
@@ -56,6 +58,11 @@ prop_abst_elim isLc ioInf expr = (red_expr /= Nothing) ==>
   where
     red_expr = reductInputLimit isLc ioInf redLimit expr
     red_1st = maybe (error "Internal Error @ prop_abst_elim") id red_expr
+
+prop_goedel :: Integer -> Bool
+prop_goedel n = let gn = abs n
+                    expr = goedel_to_expr gn
+                in gn == fst (expr_to_goedel expr)
 
 -- | 指定回数を上限に、変化しなくなるまで、beta/eta簡約を行う。toLambdaを含む。
 reductInputLimit :: Bool    -- ^ buildInput で、Lc を使うか。(Falseは Cc)
