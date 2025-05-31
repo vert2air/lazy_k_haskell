@@ -9,6 +9,7 @@ import LamCalcCore (LamExpr(..), IoInfo(..)
                   , (%:), reductInf, toLambda, readLazyK)
 import LamCalcParts (getChNum)
 import LazyKParts (deconsLoopCc, deconsLoopLc)
+import GoedelNum (expr_to_goedel)
 import ShortChurchNum (shortChNum)
 
 hUnitAll :: IO Counts
@@ -53,3 +54,7 @@ test_add_A_B_Lc = TestCase $ do
     let ioInf = def {inEof = True, inHist = [7, 11]}
     (_, out) <- deconsLoopLc ioInf def Nothing $ toLambda expr %: In(0)
     assertEqual "add_A_B deconsLoopCc" out [18]
+
+test_goedel_err :: Test
+test_goedel_err = TestCase $ do
+    assertEqual "geodel error case" (expr_to_goedel (Nm "X")) (-1, -1)
