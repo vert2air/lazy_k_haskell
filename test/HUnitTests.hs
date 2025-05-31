@@ -13,13 +13,15 @@ import ShortChurchNum (shortChNum)
 
 hUnitAll :: IO Counts
 hUnitAll = do
-    runTestTT tests
-    runTestTT $ TestList [test_lazy, test_add_A_B_Cc, test_add_A_B_Lc]
-  where
-    tests = TestList $ map (\n ->
-        let title = ("Church number Test :" ++ show n)
-        in TestLabel title (churchNumberTest title n)
-        ) [0..256]
+    runTestTT $ TestList
+        [ test_lazy, test_add_A_B_Cc, test_add_A_B_Lc, test_goedel_err
+        , test_church]
+
+test_church :: Test
+test_church = TestList $ map (\n ->
+    let title = ("Church number Test :" ++ show n)
+    in TestLabel title (churchNumberTest title n)
+    ) [0..256]
 
 churchNumberTest :: String -> Int -> Test
 churchNumberTest title n = TestCase(assertEqual title (Right n) (calc title n))
