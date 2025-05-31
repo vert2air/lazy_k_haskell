@@ -43,7 +43,8 @@ gn_struct_pair = ((1, 0):) . concat $
 2番目の要素は、変数が 1 個の場合の組み合わせ数 3。
 -}
 gn_struct_bound :: [Integer]
-gn_struct_bound = (0:) . (3:) $ map (calc . (gn_struct_pair !!)) [1..]
+gn_struct_bound = (0:) . (rank_sum!!1:) $
+                                    map (calc . (gn_struct_pair !!)) [1..]
   where
     calc (f, a) = rank_cum !! (f + a - 1) + off f (f + a)
     off f r = let r_1 = drop 1 . take r $ rank_sum
