@@ -9,17 +9,20 @@ import LamCalcCore (LamExpr(..), IoInfo(..)
                   , (%:), reductInf, toLambda, readLazyK)
 import LamCalcParts (getChNum)
 import LazyKParts (deconsLoopCc, deconsLoopLc)
+import GoedelNum (expr_to_goedel)
 import ShortChurchNum (shortChNum)
 
 hUnitAll :: IO Counts
 hUnitAll = do
-    runTestTT tests
-    runTestTT $ TestList [test_lazy, test_add_A_B_Cc, test_add_A_B_Lc]
-  where
-    tests = TestList $ map (\n ->
-        let title = ("Church number Test :" ++ show n)
-        in TestLabel title (churchNumberTest title n)
-        ) [0..256]
+    runTestTT $ TestList
+        [ test_lazy, test_add_A_B_Cc, test_add_A_B_Lc, test_goedel_err
+        , test_church]
+
+test_church :: Test
+test_church = TestList $ map (\n ->
+    let title = ("Church number Test :" ++ show n)
+    in TestLabel title (churchNumberTest title n)
+    ) [0..256]
 
 churchNumberTest :: String -> Int -> Test
 churchNumberTest title n = TestCase(assertEqual title (Right n) (calc title n))
@@ -51,3 +54,7 @@ test_add_A_B_Lc = TestCase $ do
     let ioInf = def {inEof = True, inHist = [7, 11]}
     (_, out) <- deconsLoopLc ioInf def Nothing $ toLambda expr %: In(0)
     assertEqual "add_A_B deconsLoopCc" out [18]
+
+test_goedel_err :: Test
+test_goedel_err = TestCase $ do
+    assertEqual "geodel error case" (expr_to_goedel (Nm "X")) (-1, -1)
