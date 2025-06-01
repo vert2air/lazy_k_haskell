@@ -32,7 +32,7 @@ data Stat = Stat
     , freeVar_named :: M.Map Char Int
     , input_promise :: M.Map Int  Int
     , church_number :: M.Map Int  Int
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 instance Default Stat where
     def = Stat
