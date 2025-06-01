@@ -175,7 +175,7 @@ toNamedString mng (V v) = Stringifying name SK_General mng
             -- De Bruijn index は先頭に'_'を付ける。
             _                                     -> '_' : show v
 toNamedString mng (In ix) = Stringifying ("<" ++ show ix) SK_General mng
-toNamedString mng (Num n) = Stringifying ("#" ++ show n)  SK_General mng
+toNamedString mng (Num n) = Stringifying ("%" ++ show n)  SK_General mng
 toNamedString mng e@(L _ _) =
                     Stringifying ((nmLamSign mng):str_ret) style_ret mng_ret
   where
@@ -420,6 +420,7 @@ expr' = Nm . (:[]) . toUpper <$> oneOf ("IKSiks") <* spaces
                            ++ "abcdefghijklmnopqrstuvwxyz") <* spaces
     <|> V . read <$> (char '_' *> many1 digit) <* spaces
     <|> In . read <$> (char '<' *> many1 digit) <* spaces
+    <|> Num . read <$> (char '%' *> many1 digit) <* spaces
     <|> char '`' *> spaces *> return (%:) <*> unlamExpr <*> unlamExpr
     <|> char '*' *> spaces *> return (%:) <*> iotaExpr <*> iotaExpr
     <|> (\s -> Jot (length s) s) . filter (not . isSpace) <$>

@@ -102,6 +102,7 @@ test-suite lazy-k-haskell-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:    base ^>=4.21.0.0
+                    , containers ^>= 0.7
                     , data-default ^>=0.8.0.1
                     , QuickCheck ^>=2.15.0.1
                     , HUnit ^>=1.6.2.0
