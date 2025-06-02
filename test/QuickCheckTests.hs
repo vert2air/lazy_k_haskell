@@ -10,6 +10,7 @@ import LamCalcCore (LamExpr(..), NameManager(..), Stringifying(..), IoInfo(..)
                     , ProgDot(..), RedResult(..)
                     , reduct, buildInputLc, buildInputCc, isPdMature, toLambda
                     , abstElim, toNamedString, readLazyK, comple)
+import LazyKParts (toIotaStyle, toCcStyle, toJotStyle)
 import GoedelNum (goedel_to_expr, expr_to_goedel)
 
 -- | QuickCheck の実行時間上限。[マイクロ秒]
@@ -28,7 +29,9 @@ qc_main = do
     res_b <- quickCheckWithResult args $ within timeLimit $ prop_reduction
     res_a <- quickCheckWithResult args $ within timeLimit $ prop_abst_elim
     res_goedel <- quickCheckWithResult args prop_goedel
-    return [res_rw, res_b, res_a, res_goedel]
+    res_iota <- quickCheckWithResult args prop_cc_iota
+    res_jot <- quickCheckWithResult args prop_cc_jot
+    return [res_rw, res_b, res_a, res_goedel, res_iota, res_jot]
 
 -- | toNamedString の結果が readLazyK で元に戻ること。
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Property
@@ -63,6 +66,18 @@ prop_goedel :: Integer -> Bool
 prop_goedel n = let gn = abs n
                     expr = goedel_to_expr gn
                 in gn == fst (expr_to_goedel expr)
+
+prop_cc_iota :: Integer -> Bool
+prop_cc_iota n = let gn = abs n
+                     cc = goedel_to_expr gn
+                     iota = toIotaStyle cc
+                 in toCcStyle iota == cc
+
+prop_cc_jot :: Integer -> Bool
+prop_cc_jot n = let gn = abs n
+                    cc = goedel_to_expr gn
+                    jot = toJotStyle cc
+                in toCcStyle jot == cc
 
 -- | 指定回数を上限に、変化しなくなるまで、beta/eta簡約を行う。toLambdaを含む。
 reductInputLimit :: Bool    -- ^ buildInput で、Lc を使うか。(Falseは Cc)
