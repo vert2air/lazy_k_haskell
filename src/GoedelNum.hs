@@ -194,21 +194,19 @@ cover_rank r gn = if gn < rank_cum !! r
 
 {- | 変数 r 個の式の処理に必要な、gn_struct の個数
 
->>> cover_struct 1
-1
->>> cover_struct 2
-4
->>> cover_struct 3
-16
+Goedel数からCC式への変換は、
+-g 323_174 (=``````sssssss)なら、そこそこのレスポンスだが、
+-g 323_175 (=`i`i`i`i`i`i`ii)でも返事が来なくなる。
+binSearch で M.Map を組み上げる処理が重過ぎるようになるのか？
+feature_fast_goedel は設計に無理があるようだ。
+
+>>> map cover_struct [1..8]
+[1,4,16,82,553,4426,38917,362092]
 -}
 cover_struct :: Int -> Integer
-cover_struct n = sum $ for [1..n] $ \r ->
-                  sum $ for [1..r-1] $ \f ->
-                      let a = r - f
-                      in rank_sum !! f
-  where for = flip map
--- cover_struct r = foldl (\acc i -> acc + i * i) 0 [1..r]
--- cover_struct r = 4^(r - 1)
+cover_struct n = (1+) $ sum $ flip map [1..n] $ \r ->
+                          sum $ flip map [1..r-1] $ \f ->
+                              rank_sum !! f
 
 goedel_to_expr :: Integer -> LamExpr
 goedel_to_expr gn = g2e_aux (decomp_map gn) gn
