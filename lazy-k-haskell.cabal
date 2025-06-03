@@ -26,6 +26,7 @@ library
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.21.0.0
+                    , binary-search ^>= 2.0.0
                     , data-default ^>=0.8.0.1
                     , containers ^>= 0.7
                     , parsec ^>= 3.1.18.0

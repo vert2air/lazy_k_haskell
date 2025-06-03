@@ -1,6 +1,7 @@
 module GoedelNum where
 
 import qualified Data.Map as M (Map, fromList, lookupLE)
+import Numeric.Search.Range (searchFromTo)
 
 import LamCalcCore (LamExpr(..), (%:))
 
@@ -87,9 +88,20 @@ decomp_gn decomp gn = (f_gn, o_gn)
     (top, (f_cnt, o_cnt)) = maybe (error "Inner Error: decomp_gn") id $
                                     M.lookupLE gn decomp
     renum = gn - top
-    (f_ord, o_ord) = renum `divMod` (rank_sum !! o_cnt)
+    f_ord = renum `binDiv` (rank_sum !! o_cnt)
+    o_ord = renum - (f_ord * (rank_sum !! o_cnt))
     f_gn = f_ord + rank_cum !! (f_cnt - 1)
     o_gn = o_ord + rank_cum !! (o_cnt - 1)
+
+{- | 二分探索を使った除算
+
+>>> map (`binDiv` (3 :: Int)) [5, 6, 7, 8, 9]
+[1,2,2,2,3]
+-}
+binDiv :: (Integral a) => a -> a -> a
+binDiv x y = case searchFromTo (\a -> x < y * (a + 1)) 0 x of
+    Just a -> a
+    Nothing -> error "Internal Error: binDiv"
 
 expr_to_goedel :: LamExpr -> (Integer, Int)
 expr_to_goedel (Nm "I") = (0, 1)
