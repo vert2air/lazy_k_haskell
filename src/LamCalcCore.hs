@@ -794,8 +794,8 @@ abstElim (L _ (V v))
 abstElim (L _ inner@(L _ le))
     | hasVar 2 le = Just . comple abstElim . la . comple abstElim $ inner --R.5
     | otherwise   = error $ "out of rule 5: " ++ show (la inner)
-abstElim (L _ (App _ m (V 1)))
-    | not (hasVar 1 m) = Just . comple (shallow 1) $ m  -- Eta reduction
+abstElim (L _ (App _ m (V 1)))  -- Eta reduction
+    | not (hasVar 1 m) = Just . comple abstElim . comple (shallow 1) $ m
 abstElim (L _ (App _ m n)) =
     Just $ Nm "S" %: comple abstElim (la m) %: comple abstElim (la n) -- Rule 6
 abstElim (L _ (In _)) = Nothing
