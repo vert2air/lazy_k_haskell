@@ -63,6 +63,7 @@ instance Arbitrary LamExpr where
             jotexp <- listOf1 . oneof . map pure $ "01"
             return $ Jot (length jotexp) jotexp
         -- , In . abs <$> arbitrary
+        , Num . abs <$> arbitrary
         ]
 
 -- ラムダ式の長さを取得
@@ -553,11 +554,6 @@ incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
 incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
 incPd _ r               = r
 
--- | 各レベルの進捗Dotのカウンタを加算
-incPds :: ProgDot -> RedResult e -> RedResult e
-incPds ds (RedStop d i e) = RedStop (d + ds) i e
-incPds ds (RedProg d i e) = RedProg (d + ds) i e
-
 -- | 進捗Dotを出力条件が満たされたか。
 isPdMature :: Int -> IoInfo -> ProgDot -> Bool
 isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
@@ -799,8 +795,8 @@ abstElim (L _ (V v))
 abstElim (L _ inner@(L _ le))
     | hasVar 2 le = Just . comple abstElim . la . comple abstElim $ inner --R.5
     | otherwise   = error $ "out of rule 5: " ++ show (la inner)
-abstElim (L _ (App _ m (V 1)))
-    | not (hasVar 1 m) = Just . comple (shallow 1) $ m  -- Eta reduction
+abstElim (L _ (App _ m (V 1)))  -- Eta reduction
+    | not (hasVar 1 m) = Just . comple abstElim . comple (shallow 1) $ m
 abstElim (L _ (App _ m n)) =
     Just $ Nm "S" %: comple abstElim (la m) %: comple abstElim (la n) -- Rule 6
 abstElim (L _ (In _)) = Nothing

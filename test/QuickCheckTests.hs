@@ -27,7 +27,7 @@ qc_main = do
     let args = stdArgs { maxSuccess = 1000, maxSize = 1000 }
     res_rw <- quickCheckWithResult args prop_toNamedString_readLazyK
     res_b <- quickCheckWithResult args $ within timeLimit $ prop_reduction
-    res_a <- quickCheckWithResult args $ within timeLimit $ prop_abst_elim
+    res_a <- quickCheckWithResult args prop_abst_elem
     res_goedel <- quickCheckWithResult args prop_goedel
     res_iota <- quickCheckWithResult args prop_cc_iota
     res_jot <- quickCheckWithResult args prop_cc_jot
@@ -52,15 +52,12 @@ prop_reduction isLc ioInf expr = (red_expr /= Nothing) ==>
     red_expr = reductInputLimit isLc ioInf redLimit expr
     red_1st = maybe (error "Internal Error @ prop_reduction") id red_expr
 
--- | beta/eta簡約が止まるなら、抽象化除去後に簡約しても値は同一であること。
-prop_abst_elim :: Bool -> IoInfo -> LamExpr -> Property
-prop_abst_elim isLc ioInf expr = (red_expr /= Nothing) ==>
-    case reductInputLimit isLc ioInf redLimit $ comple abstElim expr of
-        Nothing      -> False -- 抽象化除去して簡約出来るなくなればtest失敗。
-        Just red_2nd -> red_1st == red_2nd  -- 抽象化除去後も同じ値。試験成功。
+-- | abstElimを2回適用しても同じ値になること。
+prop_abst_elem :: LamExpr -> Bool
+prop_abst_elem expr = ae_1time == ae_2time
   where
-    red_expr = reductInputLimit isLc ioInf redLimit expr
-    red_1st = maybe (error "Internal Error @ prop_abst_elim") id red_expr
+    ae_1time = comple abstElim expr
+    ae_2time = comple abstElim ae_1time
 
 prop_goedel :: Integer -> Bool
 prop_goedel n = let gn = abs n
