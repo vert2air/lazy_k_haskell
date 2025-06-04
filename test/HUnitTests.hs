@@ -45,17 +45,21 @@ test_add_A_B_Cc :: Test
 test_add_A_B_Cc = TestCase $ do
     src <- readFile "lazy/add_A_B.lazy"
     let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
-    let ioInf = def {inEof = True, inHist = [7, 11]}
-    (_, out) <- deconsLoopCc ioInf def Nothing $ expr %: In(0)
-    assertEqual "add_A_B deconsLoopCc" out [18]
+    res <- flip mapM [True, False] $ \eof -> do
+        let ioInf = def {inEof = eof, inHist = [7, 11]}
+        (_, out) <- deconsLoopCc ioInf def Nothing $ expr %: In(0)
+        return out
+    assertEqual "add_A_B deconsLoopCc" res [[18], [18]]
 
 test_add_A_B_Lc :: Test
 test_add_A_B_Lc = TestCase $ do
     src <- readFile "lazy/add_A_B.lazy"
     let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
-    let ioInf = def {inEof = True, inHist = [7, 11]}
-    (_, out) <- deconsLoopLc ioInf def Nothing $ toLambda expr %: In(0)
-    assertEqual "add_A_B deconsLoopCc" out [18]
+    res <- flip mapM [True, False] $ \eof -> do
+        let ioInf = def {inEof = eof, inHist = [7, 11]}
+        (_, out) <- deconsLoopLc ioInf def Nothing $ toLambda expr %: In(0)
+        return out
+    assertEqual "add_A_B deconsLoopCc" res [[18], [18]]
 
 test_goedel_err :: Test
 test_goedel_err = TestCase $ do
