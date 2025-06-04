@@ -63,6 +63,7 @@ instance Arbitrary LamExpr where
             jotexp <- listOf1 . oneof . map pure $ "01"
             return $ Jot (length jotexp) jotexp
         -- , In . abs <$> arbitrary
+        , Num . abs <$> arbitrary
         ]
 
 -- ラムダ式の長さを取得
