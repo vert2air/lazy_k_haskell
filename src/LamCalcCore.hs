@@ -553,11 +553,6 @@ incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
 incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
 incPd _ r               = r
 
--- | 各レベルの進捗Dotのカウンタを加算
-incPds :: ProgDot -> RedResult e -> RedResult e
-incPds ds (RedStop d i e) = RedStop (d + ds) i e
-incPds ds (RedProg d i e) = RedProg (d + ds) i e
-
 -- | 進捗Dotを出力条件が満たされたか。
 isPdMature :: Int -> IoInfo -> ProgDot -> Bool
 isPdMature n IoInfo{progDot = ProgDot mat} (ProgDot d)
