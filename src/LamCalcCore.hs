@@ -532,7 +532,7 @@ data IoInfo = IoInfo
     , progDot :: ProgDot -- ^ 進捗dotを表示すべきの出力頻度。
     , lamSign :: Char -- ^ ラムダ抽象の記号。'λ'か'\\'を想定。
     , startCPUTime :: !Integer -- ^ 開始時の getCPUTime
-    } deriving (Eq, Ord, Show)
+    } deriving (Eq, Show)
 
 instance Default IoInfo where
     def = IoInfo False [] False def 'λ' 0
