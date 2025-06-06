@@ -187,7 +187,7 @@ careIoInfo f ioInf d expr = do
                 ioInf' <- pollInput ix ioInf
                 (red, ioInf'') <- careIoInfo f ioInf' pd expr'
                 return (forceProg red, ioInf'')
-        RedStop pd ix expr'
+        RedStop pd ix _expr'   -- コメントアウトのputStrLn復活時は'_'を取る。
             | isPdMature 1 ioInf pd -> do
                 -- 返ってきた理由は、beta簡約の回数が基準に達したからだった。
                 hPutStr stderr "."  -- 進捗dotの表示
