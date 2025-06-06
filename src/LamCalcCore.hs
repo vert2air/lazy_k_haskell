@@ -125,8 +125,8 @@ instance Default NameManager where
 
 instance Arbitrary NameManager where
     arbitrary = NameManager <$> arbitrary
-        <*> shuffle ("abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
-                ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ_")
+        <*> shuffle ("abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz_ _ _"
+                ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ_ _ _")
         <*> pure ""
         <*> arbitrary
         <*> oneof [pure 'λ', pure '\\']
