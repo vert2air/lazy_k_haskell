@@ -27,11 +27,18 @@ qc_main = do
     let args = stdArgs { maxSuccess = 1000, maxSize = 1000 }
     res_rw <- quickCheckWithResult args prop_toNamedString_readLazyK
     res_b <- quickCheckWithResult args $ within timeLimit $ prop_reduction
-    res_a <- quickCheckWithResult args prop_abst_elem
-    res_goedel <- quickCheckWithResult args prop_goedel
-    res_iota <- quickCheckWithResult args prop_cc_iota
-    res_jot <- quickCheckWithResult args prop_cc_jot
-    return [res_rw, res_b, res_a, res_goedel, res_iota, res_jot]
+    res_Integer <- mapM (quickCheckWithResult args)
+            [ prop_goedel
+            , prop_cc_iota
+            , prop_cc_jot
+            ]
+    res_LamExpr <- mapM (quickCheckWithResult args)
+            [ prop_abst_elem_twice
+            , prop_expr_cc_twice
+            , prop_expr_iota_twice
+            , prop_expr_jot_twice
+            ]
+    return $ res_rw : res_b : (res_LamExpr ++ res_Integer)
 
 -- | toNamedString の結果が readLazyK で元に戻ること。
 prop_toNamedString_readLazyK :: NameManager -> LamExpr -> Property
@@ -52,13 +59,6 @@ prop_reduction isLc ioInf expr = (red_expr /= Nothing) ==>
     red_expr = reductInputLimit isLc ioInf redLimit expr
     red_1st = maybe (error "Internal Error @ prop_reduction") id red_expr
 
--- | abstElimを2回適用しても同じ値になること。
-prop_abst_elem :: LamExpr -> Bool
-prop_abst_elem expr = ae_1time == ae_2time
-  where
-    ae_1time = comple abstElim expr
-    ae_2time = comple abstElim ae_1time
-
 prop_goedel :: Integer -> Bool
 prop_goedel n = let gn = abs n
                     expr = goedel_to_expr gn
@@ -75,6 +75,28 @@ prop_cc_jot n = let gn = abs n
                     cc = goedel_to_expr gn
                     jot = toJotStyle cc
                 in toCcStyle jot == cc
+
+-- | abstElimを2回適用しても同じ値になること。
+prop_abst_elem_twice :: LamExpr -> Bool
+prop_abst_elem_twice expr = ae_1time == ae_2time
+  where
+    ae_1time = comple abstElim expr
+    ae_2time = comple abstElim ae_1time
+
+-- | CCスタイルへの変更を2回適用しても同じ値になること。
+prop_expr_cc_twice :: LamExpr -> Bool
+prop_expr_cc_twice expr = toCcStyle e_1 == e_1
+  where e_1 = toCcStyle expr
+
+-- | Iotaスタイルへの変更を2回適用しても同じ値になること。
+prop_expr_iota_twice :: LamExpr -> Bool
+prop_expr_iota_twice expr = toIotaStyle e_1 == e_1
+  where e_1 = toIotaStyle expr
+
+-- | Jotスタイルへの変更を2回適用しても同じ値になること。
+prop_expr_jot_twice :: LamExpr -> Bool
+prop_expr_jot_twice expr = toJotStyle e_1 == e_1
+  where e_1 = toJotStyle expr
 
 -- | 指定回数を上限に、変化しなくなるまで、beta/eta簡約を行う。toLambdaを含む。
 reductInputLimit :: Bool    -- ^ buildInput で、Lc を使うか。(Falseは Cc)
