@@ -107,3 +107,4 @@ test-suite lazy-k-haskell-test
                     , QuickCheck ^>=2.15.0.1
                     , HUnit ^>=1.6.2.0
                     , lazy-k-haskell
+                    , silently ^>=1.2.5.4
