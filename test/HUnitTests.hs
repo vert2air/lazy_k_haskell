@@ -6,8 +6,10 @@ import Data.Default (Default(..))
 import Data.Either (fromRight)
 import qualified Data.Map as M (fromList)
 import System.Exit (ExitCode(..))
+import System.IO (stderr)
+import System.IO.Silently (hCapture)
 
-import LamCalcCore (LamExpr(..), IoInfo(..), NameManager(..)
+import LamCalcCore (LamExpr(..), IoInfo(..), NameManager(..), ProgDot(..)
                   , (%:), la, reductInf, toLambda, readLazyK, toNamedString
                   , takeStringified, applyN
                   )
@@ -19,7 +21,7 @@ import ShortChurchNum (shortChNum)
 hUnitAll :: IO Counts
 hUnitAll = do
     runTestTT $ TestList
-        [ test_lazy, test_add_A_B_Cc, test_add_A_B_Lc, test_goedel_err
+        [ test_lazy, test_add_A_B , test_goedel_err
         , test_church, test_stat
         , test_show_lamExpr
         , test_show_NameManager
@@ -46,25 +48,35 @@ test_lazy = TestCase $ do
     assertEqual "lazy deconsLoopCc" (ExitSuccess, map ord "2 3 5 ")
                         =<< deconsLoopCc def def (Just 6) (expr %: In(0))
 
-test_add_A_B_Cc :: Test
-test_add_A_B_Cc = TestCase $ do
+test_add_A_B :: Test
+test_add_A_B = TestCase $ do
     src <- readFile "lazy/add_A_B.lazy"
     let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
-    res <- flip mapM [True, False] $ \eof -> do
+    flip mapM_ [True, False] $ \eof -> do
         let ioInf = def {inEof = eof, inHist = [7, 11]}
-        deconsLoopCc ioInf def Nothing $ expr %: In(0)
-    assertEqual "add_A_B deconsLoopCc" res
-                                [(ExitSuccess, [18]), (ExitSuccess, [18])]
+        assertEqual "add_A_B deconsLoopCc" (ExitSuccess, [18])
+                =<< deconsLoopCc ioInf def Nothing (expr %: In(0))
+        assertEqual "add_A_B deconsLoopLc" (ExitSuccess, [18])
+                =<< deconsLoopLc ioInf def Nothing (toLambda expr %: In(0))
+        res <- hCapture [stderr] $
+                deconsLoopCc ioInf {optV = True} def Nothing (expr %: In(0))
+        let outLines = lines . fst $ res
+            line0_start = "18(=0x12)--'"
+        assertEqual "add_A_B deconsLoopCc -v [0]" line0_start
+                                (take (length line0_start) $ (outLines !! 0))
+        assertEqual "add_A_B deconsLoopCc -v [1]" "Reach EOF (256)"
+                                                                (outLines !! 1)
+        (progPrintCc, _) <- hCapture [stderr] $
+                deconsLoopCc ioInf {progDot = ProgDot [100,100]}
+                            def Nothing (expr %: In(0))
+        assertEqual "add_A_B deconsLoopCc -d 100,100"
+                                                progPrintCc ".**..........."
+        (progPrintLc, _) <- hCapture [stderr] $
+                deconsLoopLc ioInf {progDot = ProgDot [500,500]}
+                            def Nothing (toLambda expr %: In(0))
+        assertEqual "add_A_B deconsLoopLc -d 500,500"
+                                        progPrintLc ".*.*.*.*.*.*.*.*.*.*.*.*"
 
-test_add_A_B_Lc :: Test
-test_add_A_B_Lc = TestCase $ do
-    src <- readFile "lazy/add_A_B.lazy"
-    let expr = fromRight (Nm "dummy") . readLazyK "doctest" $ src
-    res <- flip mapM [True, False] $ \eof -> do
-        let ioInf = def {inEof = eof, inHist = [7, 11]}
-        deconsLoopLc ioInf def Nothing $ toLambda expr %: In(0)
-    assertEqual "add_A_B deconsLoopLc" res
-                                [(ExitSuccess, [18]), (ExitSuccess, [18])]
 
 test_goedel_err :: Test
 test_goedel_err = TestCase $ do
