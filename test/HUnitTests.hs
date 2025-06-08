@@ -129,8 +129,8 @@ test_show_lamExpr = TestCase $ do
                     la $ Nm "I" %: Nm "I" %: (Nm "iota" %: Nm "iota") %: V 1
     assertEqual "lamExpr show" "*i(*iS)" $
                                     show $ Nm "iota" %: (Nm "iota" %: Nm "S")
-    assertEqual "lamExpr show" "*(*iS)i" $
-                                    show $ (Nm "iota" %: Nm "S") %: Nm "iota"
+    assertEqual "lamExpr show" "λ *(*iS)i_1" $
+                        show $ la $ (Nm "iota" %: Nm "S") %: Nm "iota" %: V 1
     assertEqual "lamExpr show" "*i*i*is" $
                 takeStringified $ toNamedString def {nmUnlamStyle = True} $
                             Nm "iota" %: (Nm "iota" %: (Nm "iota" %: Nm "S"))
