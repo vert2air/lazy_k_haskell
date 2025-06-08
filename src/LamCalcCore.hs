@@ -448,10 +448,10 @@ instance Functor RedResult where
 
 instance Applicative RedResult where
     pure = RedStop def (-1)
-    RedStop dF i f <*> RedStop dE j e = RedStop (dF + dE) (max i j) (f e)
-    RedStop dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
-    RedProg dF i f <*> RedStop dE j e = RedProg (dF + dE) (max i j) (f e)
-    RedProg dF i f <*> RedProg dE j e = RedProg (dF + dE) (max i j) (f e)
+    RedStop dF i f <*> RedStop dE j e = RedStop (dF <> dE) (max i j) (f e)
+    RedStop dF i f <*> RedProg dE j e = RedProg (dF <> dE) (max i j) (f e)
+    RedProg dF i f <*> RedStop dE j e = RedProg (dF <> dE) (max i j) (f e)
+    RedProg dF i f <*> RedProg dE j e = RedProg (dF <> dE) (max i j) (f e)
 
 -- | RedResult の中の式を取り出す。
 takeExpr :: RedResult e -> e
@@ -466,17 +466,14 @@ forceProg prog            = prog
 -- | 進捗Dot用のカウントデータ
 data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
 
+instance Semigroup ProgDot where
+    (ProgDot a) <> (ProgDot b) = ProgDot (zipWith (+) a b)
+
+instance Monoid ProgDot where
+    mempty = ProgDot [0, 0]
+
 instance Default ProgDot where
-    def = ProgDot [0, 0]
-
-
-instance Num ProgDot where
-    (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
-    (*) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (*) d1 d2)
-    negate (ProgDot d) = ProgDot (map negate d)
-    abs (ProgDot d) = ProgDot (map abs d)
-    signum (ProgDot d) = ProgDot (map signum d)
-    fromInteger n = ProgDot [fromInteger n, 0]
+    def = mempty
 
 -- | Lazy Kプログラムの入力状態と、出力オプション
 data IoInfo = IoInfo
@@ -495,10 +492,10 @@ instance Default IoInfo where
 
 -- | 指定レベルの進捗Dotのカウンタを加算
 incPd :: Int -> RedResult e -> RedResult e
-incPd 1 (RedStop d i e) = RedStop (d + ProgDot [0, 1]) i e
-incPd 1 (RedProg d i e) = RedProg (d + ProgDot [0, 1]) i e
-incPd 0 (RedStop d i e) = RedStop (d + ProgDot [1, 0]) i e
-incPd 0 (RedProg d i e) = RedProg (d + ProgDot [1, 0]) i e
+incPd 1 (RedStop d i e) = RedStop (d <> ProgDot [0, 1]) i e
+incPd 1 (RedProg d i e) = RedProg (d <> ProgDot [0, 1]) i e
+incPd 0 (RedStop d i e) = RedStop (d <> ProgDot [1, 0]) i e
+incPd 0 (RedProg d i e) = RedProg (d <> ProgDot [1, 0]) i e
 incPd _ r               = r
 
 -- | 進捗Dotを出力条件が満たされたか。
