@@ -446,13 +446,6 @@ instance Functor RedResult where
     fmap f (RedStop pd i e) = RedStop pd i (f e)
     fmap f (RedProg pd i e) = RedProg pd i (f e)
 
-instance Applicative RedResult where
-    pure = RedStop def (-1)
-    RedStop dF i f <*> RedStop dE j e = RedStop (dF <> dE) (max i j) (f e)
-    RedStop dF i f <*> RedProg dE j e = RedProg (dF <> dE) (max i j) (f e)
-    RedProg dF i f <*> RedStop dE j e = RedProg (dF <> dE) (max i j) (f e)
-    RedProg dF i f <*> RedProg dE j e = RedProg (dF <> dE) (max i j) (f e)
-
 -- | RedResult の中の式を取り出す。
 takeExpr :: RedResult e -> e
 takeExpr (RedStop _ _ e) = e
