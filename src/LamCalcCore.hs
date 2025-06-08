@@ -15,8 +15,6 @@ import           Data.List (elemIndex)
 import qualified Data.Map as M (Map, empty, insert, lookup)
 import qualified Data.Set as S (Set, empty, insert,
                                 notMember, singleton, toList, union)
-import Test.QuickCheck (Arbitrary(..), Gen, oneof, listOf1, shuffle,
-                        suchThat, vectorOf)
 import           Text.Parsec ((<|>), (<?>), Parsec, char, digit, many1, oneOf,
                               parse, spaces, try)
 
