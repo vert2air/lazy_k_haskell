@@ -116,11 +116,21 @@ test_show_lamExpr :: Test
 test_show_lamExpr = TestCase $ do
     assertEqual "lamExpr show" "λ X(_1Z)" $ show $
                 la $ Nm "X" %: (V 1 %: Nm "Z")
-    assertEqual "lamExpr show" "S(*Ii)" $ show $ Nm "S" %: (Nm "I" %: Nm "iota")
-    assertEqual "lamExpr show" "*iIS" $ show $ (Nm "iota" %: Nm "I") %: Nm "S"
+    assertEqual "lamExpr show" "λ *Ii_1" $
+                                        show $ la $ Nm "I" %: Nm "iota" %: V 1
+    assertEqual "lamExpr show" "λ *iI_1" $
+                                        show $ la $ Nm "iota" %: Nm "I" %: V 1
     assertEqual "lamExpr show" "*ii" $ show $ Nm "iota" %: Nm "iota"
-    assertEqual "lamExpr show" "*i(*iS)" $ show $ Nm "iota" %: (Nm "iota" %: Nm "S")
-    assertEqual "lamExpr show" "*(*iS)i" $ show $ (Nm "iota" %: Nm "S") %: Nm "iota"
+    assertEqual "lamExpr show" "λx.``*ii`iix" $
+                takeStringified $ toNamedString def {nmUnlamStyle = True} $
+                    la $ Nm "iota" %: Nm "iota" %: (Nm "I" %: Nm "I") %: V 1
+    assertEqual "lamExpr show" "λx.```ii*iix" $
+                takeStringified $ toNamedString def {nmUnlamStyle = True} $
+                    la $ Nm "I" %: Nm "I" %: (Nm "iota" %: Nm "iota") %: V 1
+    assertEqual "lamExpr show" "*i(*iS)" $
+                                    show $ Nm "iota" %: (Nm "iota" %: Nm "S")
+    assertEqual "lamExpr show" "λ *(*iS)i_1" $
+                        show $ la $ (Nm "iota" %: Nm "S") %: Nm "iota" %: V 1
     assertEqual "lamExpr show" "*i*i*is" $
                 takeStringified $ toNamedString def {nmUnlamStyle = True} $
                             Nm "iota" %: (Nm "iota" %: (Nm "iota" %: Nm "S"))
@@ -143,3 +153,5 @@ test_show_lamExpr = TestCase $ do
                 applyN ((26 - 3) * 2) la .
                     foldl1 (\acc e -> acc %: e) . map V $
                         [(26 - 3) * 2, (26 - 3) * 2 -1 .. 1]
+    -- ArbitからInを外したので個別test。mngを見る為、V 1とmix。
+    assertEqual "lamExpr show" "λ <3_1" $ show (la $ In 3 %: V 1)
