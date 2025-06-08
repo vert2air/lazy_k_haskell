@@ -39,33 +39,6 @@ instance Show LamExpr where
     -- red_ccN から呼ばれるケースでも使いたいので、PK_indexを採用。
     show = takeStringified . toNamedString def { nmPolicy = PK_index }
 
-instance Arbitrary LamExpr where
-    arbitrary = oneof [
-          -- De Bruijn index はラムダの深さなので、
-          -- 大き過ぎると自由変数ばかりになってしまう。
-          -- ラムダの深さは、対数スケールで増加する筈なので、log で圧縮する。
-          V . (+1) . floor . log . (+1) . abs <$> (arbitrary :: Gen Float)
-        , do
-            lexp <- arbitrary
-            case lexp of
-                -- '*' が無いと Iotaスタイルは表現できない。やり直す。
-                Nm "iota" -> la <$> arbitrary
-                _         -> return $ la lexp
-        , (%:) <$> arbitrary <*> arbitrary
-        , (Nm <$>) . oneof $
-            -- SKI および、iota を多めに。
-            [ pure [ch] | ch <- "SKISKISKISKISKI" ++ "SKSKSKSKSK" ++ "SSSSS"
-                            ++ "abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz"
-                            ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ" ]
-            ++ [pure "iota", pure "iota", pure "iota"]
-
-        , do
-            jotexp <- listOf1 . oneof . map pure $ "01"
-            return $ Jot (length jotexp) jotexp
-        -- , In . abs <$> arbitrary
-        , Num . abs <$> arbitrary
-        ]
-
 -- ラムダ式の長さを取得
 --
 -- Unlambdaスタイルで表示した時の文字列長を基準に算出。
@@ -92,11 +65,6 @@ data PolicyKind = PK_index      -- ^ 名前を付けず、De Bruijn index で表
                                 -- Poolの消費が最小になるように名前を付ける。
     deriving (Eq, Ord, Show)
 
-instance Arbitrary PolicyKind where
-    arbitrary = oneof $ map return [
-          PK_index, PK_single_use, PK_level, PK_minimum
-        ]
-
 -- | ラムダ式を表示する際に変数に名前を付けるための管理データ
 data NameManager = NameManager
     { nmPolicy :: PolicyKind -- ^ Policy for name management
@@ -122,14 +90,6 @@ instance Default NameManager where
         , nmUnlamStyle = False
         , nmLamSign = 'λ'
         }
-
-instance Arbitrary NameManager where
-    arbitrary = NameManager <$> arbitrary
-        <*> shuffle ("abcdefgh" ++ "j" ++ "lmnopqr" ++ "tuvwxyz_ _ _"
-                ++ "ABCDEFGH" ++ "J" ++ "LMNOPQR" ++ "TUVWXYZ_ _ _")
-        <*> pure ""
-        <*> arbitrary
-        <*> oneof [pure 'λ', pure '\\']
 
 data StyleInfoKind = SK_PureIota | SK_IotaUnlam | SK_General | SK_Error
                     deriving (Eq, Show)
@@ -511,8 +471,6 @@ data ProgDot = ProgDot ![Int] deriving (Eq, Ord, Show)
 instance Default ProgDot where
     def = ProgDot [0, 0]
 
-instance Arbitrary ProgDot where
-    arbitrary = ProgDot <$> vectorOf 2 (arbitrary `suchThat` (>= 0))
 
 instance Num ProgDot where
     (+) (ProgDot d1) (ProgDot d2) = ProgDot (zipWith (+) d1 d2)
@@ -536,15 +494,6 @@ data IoInfo = IoInfo
 
 instance Default IoInfo where
     def = IoInfo False [] False def 'λ' 0
-
-instance Arbitrary IoInfo where
-    arbitrary = IoInfo
-        <$> arbitrary
-        <*> (map (`mod` 256) <$> arbitrary)
-        <*> arbitrary
-        <*> arbitrary
-        <*> oneof [pure 'λ', pure '\\']
-        <*> arbitrary
 
 -- | 指定レベルの進捗Dotのカウンタを加算
 incPd :: Int -> RedResult e -> RedResult e
