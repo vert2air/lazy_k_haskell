@@ -1,9 +1,6 @@
 -- {-# LANGUAGE DeriveDataTypeable #-}
 -- {-# OPTIONS_GHC -fno-cse #-}
 
--- import Prelude hiding (readFile, putStrLn, getArgs)
--- import System.IO.Encoding (readFile, putStrLn, getArgs)
--- import Data.Char (ord)
 import Data.Default (Default(..))
 import Data.List.Split (splitOn)
 -- import System.Console.CmdArgs ((&=), Data, Typeable, cmdArgs, help, args, name, typ, typFile)
@@ -16,9 +13,10 @@ import System.Environment (getArgs)
 import System.Exit (ExitCode(..), exitWith)
 import LamCalcCore ((%:), LamExpr(..), IoInfo(..), ProgDot(..),
                     readLazyK, toLambda)
-import LazyKParts (deconsLoop, onlyV)
+import LazyKParts (deconsLoopLc, deconsLoopCc, onlyV, toCcStyle)
 
 data Flag = MaxOut Int
+          | ToLam Bool
           | Verbose Bool
           | DotFreq ProgDot
           deriving (Show)
@@ -26,6 +24,7 @@ data Flag = MaxOut Int
 options :: [OptDescr Flag]
 options =
     [ Option [] ["max"] (ReqArg (MaxOut . readInt) "COUNT") "Max output count"
+    , Option ['l'] [] (NoArg (ToLam False)) "Process as lambda calculus"
     , Option ['v'] [] (NoArg (Verbose True)) "Verbose output"
     , Option ['d'] [] (ReqArg
             (DotFreq . ProgDot . map readInt . splitOn "," . filter (/='_'))
@@ -58,24 +57,24 @@ argv = Argument
     { maxOut = 0 &= help "Max output count if > 0" &= typ "INT" &= name "max"
     , verbose = False       &= help "Verbose output" &= name "v"
     , progDotFreq = []  &= help "Progress dot" &= name "d" &= typ "[Int]"
-    -- , lazykFile = " "       &= help "LazyK source file" &= args &= typ "FILE"
     , lazykFile = " "       &= args &= typFile
     }
 -}
 main :: IO ()
--- main = print =<< cmdArgs argv
 main = do
     -- let ?enc = UTF8
     -- Windows では、Shellコマンド chcp で、UTF-8にしておく。
     -- /c/Windows/System32/chcp.com 65001
     (opts, [srcFile]) <- compileOpts =<< getArgs
-    -- putStrLn . show $ opts
     startTime <- getCPUTime
     let for = flip map
         forAny = flip any
         maxOut = maximum . (Nothing:) $ for opts $ \op -> case op of
                         (MaxOut n) -> Just n
                         _ -> Nothing
+        toLam = forAny opts $ \op -> case op of
+                        (ToLam _) -> True
+                        _ -> False
         verbose = forAny opts $ \op -> case op of
                         (Verbose _) -> True
                         _ -> False
@@ -86,20 +85,21 @@ main = do
         ioInf = IoInfo False [] verbose dotFreq 'λ' startTime
     onlyV ioInf $
         hPutStrLn stderr $ "Start time : " ++ show startTime
-    exitCode <- lazy ioInf maxOut srcFile
+    (exitCode, _) <- lazy toLam ioInf maxOut srcFile
     endTime <- getCPUTime
     onlyV ioInf $ do
         let sec = fromIntegral (endTime - startTime) / 1e12 :: Double
         hPutStrLn stderr $ "Time: " ++ show sec ++ " sec"
     exitWith exitCode
 
-lazy :: IoInfo -> Maybe Int -> String -> IO ExitCode
-lazy ioInf maxOut srcFile = do
+lazy :: Bool -> IoInfo -> Maybe Int -> String -> IO (ExitCode, [Int])
+lazy toLam ioInf maxOut srcFile = do
     lazySrc <- readFile srcFile
     case readLazyK srcFile lazySrc of
         Right a -> do
-            deconsLoop def maxOut ioInf . toLambda $ a %: In(0)
+            if toLam
+                then deconsLoopLc ioInf def maxOut . toLambda $ a %: In(0)
+                else deconsLoopCc ioInf def maxOut . toCcStyle $ a %: In(0)
         Left err -> do
             hPutStrLn stderr $ "Error: " ++ show err
-            return $ ExitFailure 1
-
+            return $ (ExitFailure 1, [])
